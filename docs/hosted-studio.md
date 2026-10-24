@@ -20,6 +20,8 @@ Studio's topbar shows its package version and short source commit. Select it for
 
 This is the browser-based setup for a repository such as `Lapotron/Glass`. Cloudflare runs the build and deploy commands in Workers Builds; you do not run them in a local terminal. Content is then managed in hosted Studio. This is a manual setup sequence, not a one-click installer.
 
+For Cloudflare AI without external browsing, copy the [self-contained deployment prompt](cloudflare-ai-deployment-prompt.md). It includes the application boundaries, exact commands, bootstrap and normal CI credentials, staging sequence and verification checks.
+
 ### Existing installations
 
 After updating to root-hosted Studio, keep the existing configured hostname if desired. To change it to `console.example.com`, update `GLASS_STUDIO_ORIGIN` in both build configurations, the Worker domain and the whole-hostname Access application together. The path change does not require a new domain, database or bucket. Do not append `/studio/` to the configured origin.
