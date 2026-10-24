@@ -1,3 +1,4 @@
+import { countReadingWords } from '../shared/article-reading.js';
 import { unified } from 'unified';
 import { countWork } from './work-cache.js';
 import remarkParse from 'remark-parse';
@@ -643,6 +644,6 @@ export async function renderMarkdown(
     titleAnchor,
     titleRange,
     media: [...media],
-    words: source.match(/[\p{L}\p{N}]+|[\p{Script=Han}]/gu)?.length || 0,
+    words: countReadingWords(source),
   };
 }

@@ -60,6 +60,13 @@ it('generates native numbered pages and a private-field-free, fingerprinted publ
   expect(first).not.toContain('Distant needle');
   const catalog = JSON.parse(renderer.archiveCatalog.data);
   expect(catalog.records).toHaveLength(50);
+  for (const record of catalog.records) {
+    const entry = renderer.entries.find((entry) => entry.id === record.id)!;
+    expect(record.facts.words).toBe(entry.rendered.words);
+    expect(record.facts.minutes).toBe(entry.minutes);
+  }
+  expect(first).toContain('class="timeline-entry-facts"');
+
   expect(catalog.records.some((e: { summary: string }) => e.summary === 'Distant needle')).toBe(
     true,
   );

@@ -3240,5 +3240,9 @@
   "Use the page numbers and years to browse every published entry.": "使用頁碼和年份瀏覽所有已發佈的文章。",
   "{value0} entry": "{value0} 篇文章",
   "{value0} published entry": "{value0} 篇已發佈文章",
-  "{value0} published entries": "{value0} 篇已發佈文章"
+  "{value0} published entries": "{value0} 篇已發佈文章",
+  "Word count": "字數",
+  "{value0} word": "{value0} 字",
+  "{value0} words": "{value0} 字",
+  "{value0} min read": "{value0} 分鐘閱讀"
 }

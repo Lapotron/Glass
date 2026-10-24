@@ -246,14 +246,21 @@ export function startArchive(browser: HTMLElement) {
   subscribeUiLocale(() => {
     syncControls();
     if (lastResult) render(lastResult);
-    else localizeMonths();
+    else localizeDates();
   });
-  function localizeMonths() {
+  function localizeDates() {
+    results.querySelectorAll<HTMLElement>('[data-archive-date]').forEach((node) => {
+      node.textContent = uiDate(node.dataset.archiveDate!, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+    });
     results.querySelectorAll<HTMLElement>('[data-archive-month]').forEach((node) => {
       node.textContent = uiDate(`${node.dataset.archiveMonth}-01T12:00:00Z`, { month: 'long' });
     });
   }
-  localizeMonths();
+  localizeDates();
   syncControls();
   browser.dataset.archiveReady = 'true';
   const legacyYear = location.hash.match(/^#archive-year-(\d{4})$/)?.[1];

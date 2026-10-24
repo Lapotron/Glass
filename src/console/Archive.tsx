@@ -1,8 +1,9 @@
+import { archiveEntry, archiveEntryMetadata } from '../shared/archive-entry.js';
 import { watchArchivePosition } from '../shared/archive-position.js';
 import { t } from '../shared/i18n.js';
 import { UiText } from '../shared/UiText.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { routeFor, type PublicEntry } from '../shared/contracts.js';
+import { type PublicEntry, type SiteConfig } from '../shared/contracts.js';
 import { ArchiveTimeline } from '../shared/ArchiveTimeline.js';
 import { ArchiveControls } from '../shared/ArchiveControls.js';
 import {
@@ -17,17 +18,17 @@ import {
 import { archivePaginationHtml } from '../shared/archive-html.js';
 import { EmptyState, Icon } from '../shared/ui.js';
 import { PageHeading } from './components.js';
-import type { CollectionsConfig } from '../shared/collections.js';
 
 export function Archive({
   entries,
   onOpen,
-  collections,
+  site,
 }: {
   entries: PublicEntry[];
   onOpen: (entry: PublicEntry) => void;
-  collections: CollectionsConfig;
+  site: SiteConfig;
 }) {
+  const collections = site.collections;
   const surface = useRef<HTMLDivElement>(null);
   const [state, setState] = useState(emptyArchiveState);
   const [number, setNumber] = useState(1);
@@ -37,28 +38,31 @@ export function Archive({
       createArchiveIndex(
         entries
           .filter((entry) => entry.status === 'published')
-          .map((entry) => ({
-            id: entry.id,
-            title: entry.title,
-            summary: entry.summary,
-            publishedAt: entry.publishedAt,
-            kind: entry.kind,
-            lang: entry.lang,
-            tags: entry.tags,
-            ...(entry.cover ? { cover: entry.cover } : {}),
-            url: routeFor(entry, collections),
-          })),
+          .map((entry) => archiveEntryMetadata(entry, collections)),
       ),
     [entries, collections],
   );
   const selection = useMemo(() => filterArchive(index, state), [index, state]);
-  const page = useMemo(() => archivePage(selection, number), [selection, number]);
+  const byId = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
+  // Count at most one visible page, rather than every private Markdown body.
+  const page = useMemo(() => {
+    const selected = archivePage(selection, number);
+    return {
+      ...selected,
+      groups: selected.groups.map((group) => ({
+        ...group,
+        months: group.months.map((month) => ({
+          ...month,
+          entries: month.entries.map((record) => archiveEntry(byId.get(record.id)!, site)),
+        })),
+      })),
+    };
+  }, [selection, number, byId, site]);
   useEffect(() => {
     if (!surface.current) return;
     const tracker = watchArchivePosition(surface.current);
     return tracker.stop;
   }, [page]);
-  const byId = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
   const visible = page.groups.flatMap((group) =>
     group.months.flatMap((month) => month.entries.map((entry) => byId.get(entry.id)!)),
   );

@@ -1,6 +1,12 @@
 /** Published metadata only. Shared by static output, Studio and the lazy archive worker. */
 export const archivePageSize = 24;
 export const archiveTopicLimit = 20;
+export type ArchiveFacts = {
+  published?: boolean;
+  updatedAt?: string;
+  words?: number;
+  minutes?: number;
+};
 export type ArchiveRecord = {
   id: string;
   title: string;
@@ -13,6 +19,7 @@ export type ArchiveRecord = {
   cover?: string;
   coverWidth?: number;
   coverHeight?: number;
+  facts?: ArchiveFacts;
 };
 export type ArchiveCatalog = {
   version: 1;
@@ -193,6 +200,18 @@ export function readArchiveCatalog(value: unknown): ArchiveCatalog {
         !/[\s\\]/.test(e.url) &&
         Array.isArray(e.tags) &&
         e.tags.every((tag) => typeof tag === 'string') &&
+        (e.facts === undefined ||
+          (!!e.facts &&
+            typeof e.facts === 'object' &&
+            !Array.isArray(e.facts) &&
+            (e.facts.published === undefined || typeof e.facts.published === 'boolean') &&
+            (e.facts.updatedAt === undefined ||
+              (typeof e.facts.updatedAt === 'string' &&
+                /^\d{4}-\d{2}-\d{2}$/.test(e.facts.updatedAt))) &&
+            (e.facts.words === undefined ||
+              (Number.isSafeInteger(e.facts.words) && e.facts.words >= 0)) &&
+            (e.facts.minutes === undefined ||
+              (Number.isSafeInteger(e.facts.minutes) && e.facts.minutes >= 1)))) &&
         (e.coverWidth === undefined ||
           (Number.isInteger(e.coverWidth) && e.coverWidth > 0 && e.coverWidth <= 40000000)) &&
         (e.coverHeight === undefined ||

@@ -19,6 +19,7 @@ const catalog: ArchiveCatalog = {
     kind: i % 2 ? 'posts' : 'lab',
     lang: 'en',
     tags: [`topic-${i % 60}`],
+    facts: { published: true, updatedAt: '2026-10-22', words: 1234, minutes: 6 },
     url: `/blog/archive-${i}/`,
     cover: i % 3 ? '/media/coast-dawn.svg' : undefined,
   })),
@@ -40,6 +41,13 @@ test('large archive loads its full catalog only on intent and keeps filtering an
   await page.locator('[data-timeline-search]').fill('Distant needle');
   await expect(page.locator('[data-timeline-entry]')).toHaveCount(1);
   await expect(page.locator('[data-timeline-entry]')).toContainText('09999');
+  await expect(page.locator('[data-timeline-fact="words"]')).toHaveText('1,234 words');
+  await expect(page.locator('[data-timeline-fact="reading"]')).toContainText('6 min read');
+  await expect(page.locator('[data-timeline-fact="updated"] time')).toHaveAttribute(
+    'datetime',
+    '2026-10-22',
+  );
+
   await expect(page).toHaveURL(/q=Distant\+needle/);
   await page.locator('[data-timeline-search]').fill('');
   await expect(page.locator('[data-timeline-entry]')).toHaveCount(24);

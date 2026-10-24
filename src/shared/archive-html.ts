@@ -5,7 +5,7 @@ import {
   type ArchiveRecord,
   type ArchiveState,
 } from './archive.js';
-import { t, uiDate, type UiParams } from './i18n.js';
+import { t, uiDate, uiNumber, type UiParams } from './i18n.js';
 import { escapeHtml as e } from './utils.js';
 
 const ui = (message: string, params?: UiParams) =>
@@ -14,6 +14,67 @@ const countLabel = (count: number) =>
   `<span ${ui(count === 1 ? '{value0} entry' : '{value0} entries', { value0: count })}>${e(count === 1 ? t('{value0} entry', { value0: count }) : t('{value0} entries', { value0: count }))}</span>`;
 const arrow =
   '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M7 17 17 7M7 7h10v10"/></svg>';
+const factIcon = (paths: string) =>
+  `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${paths}</svg>`;
+function entryFacts(entry: ArchiveRecord) {
+  const facts = entry.facts;
+  if (!facts) return '';
+  const groups: string[] = [];
+  const date = (value: string) =>
+    `<time datetime="${e(value)}" data-archive-date="${e(value)}">${e(uiDate(value, { month: 'short', day: 'numeric', year: 'numeric' }))}</time>`;
+  const labels = {
+    published: { key: 'Published', text: t('Published') },
+    updated: { key: 'Updated', text: t('Updated') },
+    words: { key: 'Word count', text: t('Word count') },
+    reading: { key: 'Reading time', text: t('Reading time') },
+  };
+  const group = (name: keyof typeof labels, icon: string, value: string, visible = false) =>
+    `<div data-timeline-fact="${name}"><dt>${factIcon(icon)}<span ${visible ? '' : 'class="sr-only"'} ${ui(labels[name].key)}>${e(labels[name].text)}</span></dt><dd>${value}</dd></div>`;
+  if (facts.published)
+    groups.push(
+      group(
+        'published',
+        '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/>',
+        date(entry.publishedAt),
+        true,
+      ),
+    );
+  if (facts.updatedAt)
+    groups.push(
+      group(
+        'updated',
+        '<path d="M3 12a9 9 0 1 0 2.7-6.4L3 8M3 3v5h5M12 7v5l3 2"/>',
+        date(facts.updatedAt),
+        true,
+      ),
+    );
+  let wordValue = '';
+  if (facts.words !== undefined) {
+    const params = { value0: uiNumber(facts.words) };
+    const label = facts.words === 1 ? t('{value0} word', params) : t('{value0} words', params);
+    wordValue = `<span ${facts.minutes !== undefined ? 'data-timeline-fact="words"' : ''} ${ui(facts.words === 1 ? '{value0} word' : '{value0} words', params)}>${e(label)}</span>`;
+  }
+  if (facts.minutes !== undefined) {
+    const params = { value0: uiNumber(facts.minutes) };
+    const duration = `<span ${ui('{value0} min read', params)}>${e(t('{value0} min read', params))}</span>`;
+    groups.push(
+      group(
+        'reading',
+        '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+        `${wordValue}${wordValue ? ' <span aria-hidden="true">·</span> ' : ''}${duration}`,
+      ),
+    );
+  } else if (wordValue) {
+    groups.push(
+      group(
+        'words',
+        '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8ZM14 2v6h6M8 13h8M8 17h6"/>',
+        wordValue,
+      ),
+    );
+  }
+  return groups.length ? `<dl class="timeline-entry-facts">${groups.join('')}</dl>` : '';
+}
 function row(entry: ArchiveRecord, labels: { posts: string; lab: string }, edit: boolean) {
   const icon =
     entry.kind === 'posts'
@@ -27,6 +88,7 @@ function row(entry: ArchiveRecord, labels: { posts: string; lab: string }, edit:
     <div class="timeline-entry-content"><div class="timeline-entry-meta"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">${icon}</svg><span data-ui-collection="${entry.kind}" data-ui-form="singular" data-ui-source="${e(labels[entry.kind])}">${e(labels[entry.kind])}</span>${entry.tags[0] ? `<span class="timeline-topic">${e(entry.tags[0])}</span>` : ''}</div>
     <h3 lang="${e(entry.lang)}"><span>${e(entry.title)}</span>${arrow}</h3>${entry.summary ? `<p lang="${e(entry.lang)}">${e(entry.summary)}</p>` : ''}</div>
     ${entry.cover ? `<img class="timeline-cover" src="${e(entry.cover)}" sizes="(max-width: 520px) 80px, 160px" alt="" loading="lazy" decoding="async" ${entry.coverWidth && entry.coverHeight ? `width="${entry.coverWidth}" height="${entry.coverHeight}"` : ''}/>` : ''}
+    ${entryFacts(entry)}
   </${edit ? 'button' : 'a'}></li>`;
 }
 /** Trusted markup with every author-provided value escaped; no React in reader/worker graphs. */

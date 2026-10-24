@@ -1,3 +1,5 @@
+import { articleReadingStats } from '../shared/article-reading.js';
+import { archiveEntry } from '../shared/archive-entry.js';
 import { ArchiveControls } from '../shared/ArchiveControls.js';
 import { archivePaginationHtml } from '../shared/archive-html.js';
 import {
@@ -286,11 +288,10 @@ export async function createRenderer(
           cause: error,
         });
       }
-      const chinese = (entry.body.match(/[\p{Script=Han}]/gu) || []).length;
       entries.push({
         ...entry,
         rendered,
-        minutes: Math.max(1, Math.ceil((rendered.words + chinese / 2) / 220)),
+        minutes: articleReadingStats(entry.body, rendered.words).minutes,
       });
     }
     about = await compiler.render(model.about.body, {
@@ -2096,17 +2097,7 @@ export async function createRenderer(
   const archiveIndex = createArchiveIndex(
     entries
       .filter((entry) => entry.status === 'published')
-      .map((entry) => ({
-        id: entry.id,
-        title: entry.title,
-        summary: entry.summary,
-        publishedAt: entry.publishedAt,
-        kind: entry.kind,
-        lang: entry.lang,
-        tags: entry.tags,
-        ...(entry.cover ? { cover: entry.cover } : {}),
-        url: routeFor(entry, site.collections),
-      })),
+      .map(entry => archiveEntry(entry, site, { words: entry.rendered.words, minutes: entry.minutes })),
   );
   const archiveSelection = filterArchive(archiveIndex, emptyArchiveState());
   const archiveCatalog: ArchiveCatalog = {

@@ -961,7 +961,7 @@ export function App() {
             ) : view === 'archive' ? (
               <Archive
                 entries={data.entries}
-                collections={data.site.collections}
+                site={data.site}
                 onOpen={(entry) => {
                   void openEntry(entry);
                 }}
