@@ -2,6 +2,8 @@ import { AwsClient } from 'aws4fetch';
 import type { SiteConfig } from '../shared/contracts.js';
 import type { CloudflareConnection } from '../shared/local-settings.js';
 import { r2Readiness } from '../server/r2-readiness.js';
+import { PagesConnection } from './pages.js';
+import { CloudError } from './types.js';
 
 /** These checks run on the authenticated Studio Worker, independently of its build queue. */
 export async function checkR2Connection(
@@ -87,9 +89,7 @@ export async function checkCloudflareConnection(
   };
   const [accounts, pages] = await Promise.allSettled([
     read('/accounts?per_page=50'),
-    accountId
-      ? read('/accounts/' + accountId + '/pages/projects?per_page=100')
-      : Promise.resolve([]),
+    accountId ? new PagesConnection(accountId, token, fetcher).list() : Promise.resolve([]),
   ]);
   const verified = Boolean(accountId && pages.status === 'fulfilled');
   return {
@@ -113,7 +113,9 @@ export async function checkCloudflareConnection(
       ? 'unchecked'
       : verified
         ? 'verified'
-        : pages.status === 'rejected' && pages.reason.message === 'denied'
+        : pages.status === 'rejected' &&
+            pages.reason instanceof CloudError &&
+            pages.reason.status === 403
           ? 'denied'
           : 'unavailable',
     ...(!accountId
@@ -121,7 +123,9 @@ export async function checkCloudflareConnection(
       : !verified
         ? {
             error:
-              'Could not verify Pages access. Check the account and Cloudflare Pages Edit permission. Configure the Direct Upload target in Hosting.',
+              pages.status === 'rejected' && pages.reason instanceof CloudError
+                ? pages.reason.message
+                : 'Could not reach Cloudflare Pages. Check the connection and retry. No build was queued.',
           }
         : {}),
   };

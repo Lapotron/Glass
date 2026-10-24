@@ -80,6 +80,8 @@ it('keeps account-owned Pages tokens usable without account-list permission', as
   const fetcher = vi.fn<typeof fetch>(async (input, init) => {
     expect(init?.method).toBe('GET');
     expect(init?.redirect).toBe('manual');
+    if (String(input).includes('/pages/projects'))
+      expect(new URL(String(input)).searchParams.get('per_page')).toBe('10');
     return String(input).includes('/pages/projects')
       ? Response.json({ success: true, result: [{ name: 'reader', secret: 'canary' }] })
       : Response.json({ success: false, errors: [{ message: 'private-canary' }] }, { status: 403 });

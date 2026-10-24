@@ -192,6 +192,10 @@ The optional operator `scripts/cloud-setup.ts` workflow provisions owned resourc
 
 See [shared contracts](contracts.md), [recovery](recovery.md), [media](media.md), [publishing](publishing.md), [ACA](aca.md) and [the self-contained dashboard prompt](cloudflare-ai-deployment-prompt.md).
 
+## Pages API connection errors
+
+A Pages GET 400 means the API rejected its request, not proof of missing permissions. Update Studio, verify the account ID rather than a zone ID, and paste the API token alone without a `Bearer` prefix or quotes. Project discovery uses bounded pages of 10, matching Wrangler. Errors include numeric Cloudflare codes without disclosing upstream bodies or credentials. A 401/403 separately points to the selected account, token validity and Pages permissions; saved Studio credentials take priority over deployment defaults.
+
 ## Cloud operations stay queued
 
 Daily operations no longer enter the build queue. For an actual Publish or explicit ACA infrastructure job, verify the Studio pipeline’s root/build/deploy fields and private Deploy Hook, then inspect that exact build UUID. Confirm the Access service-token pair and Service Auth policy and the Glass CI bearer. A different Dashboard retry is not the captured request. Cancel an unclaimed operation in Hosting and start the intended operation again only after resolving setup. Native paused batches resume in Hosting → Storage and history → Recovery and require no CI.

@@ -156,6 +156,7 @@ Verify the canonical homepage and `/assets/deployment.json`, then Publish once m
 - Create/review a backup: it should be a reference snapshot, with portable download assembly in your browser.
 - Publish: exactly the intended captured build should run SSG and upload Pages output. A Git code update should update Studio.
 - **Pages 403:** check account scope, Pages Edit and whether a saved Studio token overrides the deployment default.
+- **Pages 400:** update Studio and retry the connection check. Glass lists projects in batches of 10, matching Wrangler. If it persists, check the account ID (not the zone ID) and use the raw API token without `Bearer`, quotes or a Global API key. The error includes safe numeric Cloudflare codes; do not share the token.
 - **CI 302:** check the Access service-token pair and the Service Auth policy covering the whole hostname.
 - **CI 401:** match `GLASS_CI_TOKEN` to runtime `CI_TOKEN`.
 - **Publish keeps deploying Studio:** remove the one-time bootstrap flag and verify the saved hook belongs to this Studio pipeline.
