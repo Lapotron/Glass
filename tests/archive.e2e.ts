@@ -167,7 +167,7 @@ test('archive glass retains optical controls, solid fallback and a compact phone
   await page.goto('/archive/');
   const toolbar = page.locator('.timeline-controls');
   await expect(toolbar).toHaveAttribute('data-liquid', 'optic');
-  await expect(page.locator('.timeline-month-marker').first()).toHaveCSS('width', '18px');
+  await expect(page.locator('.timeline-month-marker').first()).toHaveCSS('width', '36px');
   await expect(page.locator('.timeline-month-marker').first()).toHaveAttribute(
     'data-liquid',
     'optic',

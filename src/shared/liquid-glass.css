@@ -260,7 +260,6 @@ html[data-wallpaper='true']
     .reader-preview-label,
     .timeline-year-rail,
     .timeline-year-label,
-    .timeline-month-heading,
     .archive-tools,
     .archive-count,
     .listing-context,
@@ -272,8 +271,7 @@ html[data-wallpaper='true']
   -webkit-backdrop-filter: blur(var(--glass-blur));
   backdrop-filter: blur(var(--glass-blur));
 }
-html[data-wallpaper='true']
-  :is(.reader-preview-label, .timeline-year-label, .timeline-month-heading, .archive-count) {
+html[data-wallpaper='true'] :is(.reader-preview-label, .timeline-year-label, .archive-count) {
   width: fit-content;
   max-width: 100%;
 }
