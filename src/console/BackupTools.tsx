@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { Button, Icon, EmptyState } from '../shared/ui.js';
 import type { BackupRecord } from '../engine/backup.js';
 import type { BackupSettings } from '../shared/operations.js';
-import { api, send } from './api.js';
+import { api, send, isCloudStudio } from './api.js';
 import { Field, ToggleField, ErrorBox } from './components.js';
 import {
   useSelection,
@@ -37,12 +37,19 @@ export function BackupAutomation({ onChanged }: { onChanged: () => Promise<void>
     <section className="settings-card glass-panel backup-controls">
       <div className="settings-card-heading">
         <Icon name="Clock3" />
-        <h2 data-ui={"Daily backups"}>{t("Daily backups")}</h2>
+        <h2 data-ui={'Daily backups'}>{t('Daily backups')}</h2>
       </div>
-      <p className="help" data-ui={"Runs once every 24 hours while Studio is open. Overdue backups run after Studio starts. Manual and safety backups are kept until you delete them."}>
-        {t("Runs once every 24 hours while Studio is open. Overdue backups run after Studio starts. Manual and safety backups are kept until you delete them.")}</p>
-      <ToggleField label={t("Automatic daily backups")} checked={enabled} onChange={setEnabled} />
-      <Field label={t("Automatic backups to keep")}>
+      <p className="help">
+        {isCloudStudio()
+          ? t(
+              'Cloudflare checks daily backups even when your browser is closed. Work runs through the private build queue.',
+            )
+          : t(
+              'Runs once every 24 hours while Studio is open. Overdue backups run after Studio starts. Manual and safety backups are kept until you delete them.',
+            )}
+      </p>
+      <ToggleField label={t('Automatic daily backups')} checked={enabled} onChange={setEnabled} />
+      <Field label={t('Automatic backups to keep')}>
         <input
           type="number"
           min="1"
@@ -54,7 +61,7 @@ export function BackupAutomation({ onChanged }: { onChanged: () => Promise<void>
       <p className="help">
         {saved?.value.lastSuccess
           ? 'Last success: ' + new Date(saved.value.lastSuccess).toLocaleString()
-          : t("No automatic backup yet.")}
+          : t('No automatic backup yet.')}
         {enabled && saved?.nextDue && ' · Next due: ' + new Date(saved.nextDue).toLocaleString()}
       </p>
       <ErrorBox error={error || saved?.value.error || ''} />
@@ -84,7 +91,8 @@ export function BackupAutomation({ onChanged }: { onChanged: () => Promise<void>
               .finally(() => setBusy(false));
           }}
         >
-          <UiText message={"Save backup preferences"}/></Button>
+          <UiText message={'Save backup preferences'} />
+        </Button>
         <Button
           icon="HardDrive"
           disabled={busy}
@@ -102,14 +110,16 @@ export function BackupAutomation({ onChanged }: { onChanged: () => Promise<void>
               .finally(() => setBusy(false));
           }}
         >
-          <UiText message={"Run automatic backup now"}/></Button>
+          <UiText message={'Run automatic backup now'} />
+        </Button>
         <Button
           className="small"
           variant="ghost"
           disabled={busy}
           onClick={() => void load().catch((error) => setError(error.message))}
         >
-          <UiText message={"Reload preferences"}/></Button>
+          <UiText message={'Reload preferences'} />
+        </Button>
       </div>
     </section>
   );
@@ -161,27 +171,36 @@ export function BackupCatalog({
   return (
     <>
       <p className="help">
-        {items.length} <UiText message={" saved backups · "}/>{size(items.reduce((sum, item) => sum + item.bytes, 0))}
+        {items.length} <UiText message={' saved backups · '} />
+        {size(items.reduce((sum, item) => sum + item.bytes, 0))}
       </p>
       <div className="managed-filters">
         <div className="search-field">
           <Icon name="Search" size={15} />
           <input
             type="search"
-            aria-label={t("Search backups")}
-            placeholder={t("Find a saved backup…")}
+            aria-label={t('Search backups')}
+            placeholder={t('Find a saved backup…')}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
-           data-ui-attrs={"{\"aria-label\":\"Search backups\",\"placeholder\":\"Find a saved backup…\"}"} />
+            data-ui-attrs={'{"aria-label":"Search backups","placeholder":"Find a saved backup…"}'}
+          />
         </div>
         <select
-          aria-label={t("Sort backups")}
+          aria-label={t('Sort backups')}
           value={sort}
           onChange={(event) => setSort(event.target.value)}
-         data-ui-attrs={"{\"aria-label\":\"Sort backups\"}"} >
-          <option value="newest" data-ui={"Newest first"}>{t("Newest first")}</option>
-          <option value="oldest" data-ui={"Oldest first"}>{t("Oldest first")}</option>
-          <option value="size" data-ui={"Largest first"}>{t("Largest first")}</option>
+          data-ui-attrs={'{"aria-label":"Sort backups"}'}
+        >
+          <option value="newest" data-ui={'Newest first'}>
+            {t('Newest first')}
+          </option>
+          <option value="oldest" data-ui={'Oldest first'}>
+            {t('Oldest first')}
+          </option>
+          <option value="size" data-ui={'Largest first'}>
+            {t('Largest first')}
+          </option>
         </select>
       </div>
       <ErrorBox error={error} />
@@ -197,10 +216,11 @@ export function BackupCatalog({
               .finally(() => setDownloading(false));
           }}
         >
-          {downloading ? t("Preparing…") : t("Download selected")}
+          {downloading ? t('Preparing…') : t('Download selected')}
         </Button>
         <Button className="small" icon="Trash2" disabled={busy} onClick={() => setAction('delete')}>
-          <UiText message={"Delete selected"}/></Button>
+          <UiText message={'Delete selected'} />
+        </Button>
         {selection.count === 1 && (
           <Button
             className="small"
@@ -210,16 +230,18 @@ export function BackupCatalog({
               setAction('label');
             }}
           >
-            <UiText message={"Rename label"}/></Button>
+            <UiText message={'Rename label'} />
+          </Button>
         )}
       </SelectionToolbar>
       <PageSelection selection={selection} items={shown} />
       {!visible.length ? (
         <EmptyState
           icon="Archive"
-          title={items.length ? t("No matching backups") : t("A clean starting point")}
+          title={items.length ? t('No matching backups') : t('A clean starting point')}
         >
-          <UiText message={"Create a backup or change your search."}/></EmptyState>
+          <UiText message={'Create a backup or change your search.'} />
+        </EmptyState>
       ) : (
         <div className="backup-list">
           {shown.map((item) => (
@@ -243,8 +265,17 @@ export function BackupCatalog({
                 </strong>
                 <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time>
                 <small>
-                  {item.entries} <UiText message={" entries · "}/>{item.media} <UiText message={" media · "}/>{size(item.bytes)}
+                  {item.entries} <UiText message={' entries · '} />
+                  {item.media} <UiText message={' media · '} />
+                  {size(item.bytes)}
                   {item.available === false && ' · Archive missing'}
+                </small>
+                <small>
+                  {item.archiveFormat === 'tar'
+                    ? t('Large archive · v3')
+                    : t('Compatibility archive · v1/v2')}
+                  {item.unpackedBytes !== undefined &&
+                    ' · ' + size(item.unpackedBytes) + ' ' + t('unpacked')}
                 </small>
               </div>
               <div className="backup-actions">
@@ -254,14 +285,16 @@ export function BackupCatalog({
                   download
                 >
                   <Icon name="Download" size={14} />
-                  <UiText message={"Download"}/></a>
+                  <UiText message={'Download'} />
+                </a>
                 <Button
                   className="small"
                   icon="Eye"
                   disabled={busy || item.available === false}
                   onClick={() => onReview(item.id)}
                 >
-                  <UiText message={"Review"}/></Button>
+                  <UiText message={'Review'} />
+                </Button>
               </div>
             </article>
           ))}
@@ -271,7 +304,9 @@ export function BackupCatalog({
       {action && (
         <BatchDialog
           title={
-            action === 'delete' ? t("Delete selected backups permanently?") : t("Rename backup label")
+            action === 'delete'
+              ? t('Delete selected backups permanently?')
+              : t('Rename backup label')
           }
           names={names}
           destructive={action === 'delete'}
@@ -289,7 +324,8 @@ export function BackupCatalog({
         >
           {action === 'delete' ? (
             <p className="help">
-              <UiText message={"These saved archives will be removed from this computer."}/>{(selection.count === items.length ||
+              {t('These saved archives will be removed from private notebook storage.')}
+              {(selection.count === items.length ||
                 (items.some((item) => item.available !== false) &&
                   items
                     .filter((item) => item.available !== false)
@@ -297,7 +333,7 @@ export function BackupCatalog({
                 ' This selection includes your last saved backup.'}
             </p>
           ) : (
-            <Field label={t("Backup label")}>
+            <Field label={t('Backup label')}>
               <input
                 maxLength={100}
                 value={label}

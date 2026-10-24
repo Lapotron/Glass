@@ -140,7 +140,7 @@ Only the artifact's public directory is deployed. Do not copy content source, lo
 
 Public navigation is fixed to Home, Archive, Projects, Life, About. Legacy navigation/homeSections keys remain readable; defaulted `site.home` holds `layout:profile|chapters`, `motion:subtle|off`, profile visibility, recent-feed options, `pinned:[]` (at most 12 unique stable entry IDs), and retained `slides`. Studio Homepage owns this subtree through conflict-safe site saves. About owns `site.profile` and a separate conflict-safe Markdown page. Its defaulted `site.about.guestbook` is off until enabled. The two source revisions remain independent. See [visual page contracts](visual-pages.md) for homepage defaults, the slide model, route behavior, timeline filters, page APIs, and scroll-stable private previews; see [integration contracts](integrations.md) for Giscus options and conversation states.
 
-Uploads now retain private originals and create optimized derivatives with validated crop/resize recipes. Media responses include dimensions and source/edit capability. See [media contracts](media.md) for endpoints, coordinate systems, private storage and publishing boundaries. New backups use version 2 and continue importing version 1.
+Uploads now retain private originals and create optimized derivatives with validated crop/resize recipes. Media responses include dimensions and source/edit capability. See [media contracts](media.md) for endpoints, coordinate systems, private storage and publishing boundaries. New large backups use streaming version 3, with compatibility export/import for versions 1 and 2; see [recovery](recovery.md#streaming-version-3-and-resumable-imports).
 
 ## Reader preferences and media delivery
 

@@ -1,18 +1,24 @@
 import { t } from '../shared/i18n.js';
 import { UiText } from '../shared/UiText.js';
 import { BackupCatalog, BackupAutomation } from './BackupTools.js';
+import { BackupImport } from './BackupImport.js';
 import { useEffect, useState } from 'react';
 import { Button, Icon } from '../shared/ui.js';
 import type { BackupRecord, RestoreReview } from '../engine/backup.js';
 import { api, send } from './api.js';
+import { formatBytes } from '../shared/media-details.js';
 import { Modal, Field, PageHeading, ErrorBox } from './components.js';
 export function Backups({ onRestored }: { onRestored: () => Promise<void> }) {
   const [items, setItems] = useState<BackupRecord[]>([]),
     [review, setReview] = useState<RestoreReview | null>(null),
-    [busy, setBusy] = useState(false),
+    [working, setBusy] = useState(false),
+    [importing, setImporting] = useState(false),
+    [format, setFormat] = useState<'large' | 'legacy'>('large'),
+    [restored, setRestored] = useState(''),
     [error, setError] = useState(''),
     [confirm, setConfirm] = useState(false),
     [message, setMessage] = useState('');
+  const busy = working || importing;
   async function refresh() {
     setItems(await api<BackupRecord[]>('backups'));
   }
@@ -26,7 +32,7 @@ export function Backups({ onRestored }: { onRestored: () => Promise<void> }) {
     setBusy(true);
     setError('');
     try {
-      const record = await send<BackupRecord>('backups', 'POST', {});
+      const record = await send<BackupRecord>('backups', 'POST', { format });
       await refresh();
       setMessage('A portable backup is ready. Download it below.');
       const link = document.createElement('a');
@@ -72,6 +78,7 @@ export function Backups({ onRestored }: { onRestored: () => Promise<void> }) {
       setMessage(
         `Notebook restored. The previous notebook is saved as safety backup ${result.safetyBackup}.`,
       );
+      setRestored(review.id);
     } catch (error) {
       setError((error as Error).message);
       setConfirm(false);
@@ -82,17 +89,32 @@ export function Backups({ onRestored }: { onRestored: () => Promise<void> }) {
   return (
     <div className="studio-page">
       <PageHeading
-        eyebrow={t("Keep a way back")}
-        title={t("Your notebook, kept safe.")}
-        description={t("Portable backups of your writing, media, settings, revisions, and Trash.")}
+        eyebrow={t('Keep a way back')}
+        title={t('Your notebook, kept safe.')}
+        description={t('Portable backups of your writing, media, settings, revisions, and Trash.')}
       >
+        <Field label={t('Archive format')}>
+          <select
+            value={format}
+            disabled={busy}
+            onChange={(event) => setFormat(event.target.value as 'large' | 'legacy')}
+          >
+            <option value="large" data-ui="Large notebook (.tar.gz)">
+              {t('Large notebook (.tar.gz)')}
+            </option>
+            <option value="legacy" data-ui="Compatibility (.json.gz)">
+              {t('Compatibility (.json.gz)')}
+            </option>
+          </select>
+        </Field>
         <Button
           variant="primary"
           icon={busy ? 'LoaderCircle' : 'Download'}
           disabled={busy}
           onClick={() => void create()}
         >
-          <UiText message={"Create & download backup"}/></Button>
+          <UiText message={'Create & download backup'} />
+        </Button>
       </PageHeading>
       <ErrorBox error={error} />
       {message && (
@@ -105,56 +127,86 @@ export function Backups({ onRestored }: { onRestored: () => Promise<void> }) {
         <section className="settings-card glass-panel">
           <div className="settings-card-heading">
             <Icon name="Upload" />
-            <h2 data-ui={"Import a notebook"}>{t("Import a notebook")}</h2>
+            <h2 data-ui={'Import a notebook'}>{t('Import a notebook')}</h2>
           </div>
-          <p className="help" data-ui={"Review a Glass .json.gz backup before restoring it. Generated pages and publishing credentials stay on this computer."}>
-            {t("Review a Glass .json.gz backup before restoring it. Generated pages and publishing credentials stay on this computer.")}</p>
-          <Field label={t("Notebook backup")}>
-            <input
-              type="file"
-              accept=".gz,application/gzip"
-              disabled={busy}
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void inspect(file);
-                event.target.value = '';
-              }}
-            />
-          </Field>
+          <p className="help">
+            <UiText message="Review the archive before replacing your notebook. Connection credentials, deployments and generated caches are excluded." />
+          </p>
+          <BackupImport
+            blocked={working}
+            restored={restored}
+            onReview={(value) => {
+              setReview(value);
+              if (value) {
+                setMessage('');
+                setError('');
+              }
+            }}
+            onBusy={setImporting}
+          />
           {review && (
             <div className="backup-review">
               <h3>{review.name}</h3>
-              <p className="help"><UiText message={"Saved "}/>{new Date(review.createdAt).toLocaleString()}</p>
+              <p className="help">
+                <UiText message={'Saved '} />
+                {new Date(review.createdAt).toLocaleString()}
+              </p>
               <dl>
                 <div>
-                  <dt data-ui={"Entries"}>{t("Entries")}</dt>
+                  <dt data-ui={'Entries'}>{t('Entries')}</dt>
                   <dd>{review.entries}</dd>
                 </div>
                 <div>
-                  <dt data-ui={"Media"}>{t("Media")}</dt>
+                  <dt data-ui={'Media'}>{t('Media')}</dt>
                   <dd>{review.media}</dd>
                 </div>
                 <div>
-                  <dt data-ui={"Revisions"}>{t("Revisions")}</dt>
+                  <dt data-ui={'Revisions'}>{t('Revisions')}</dt>
                   <dd>{review.revisions}</dd>
                 </div>
               </dl>
               <p className="help">
-                {review.added} <UiText message={" files added · "}/>{review.changed} <UiText message={" replaced · "}/>{review.removed} <UiText message={" removed"}/></p>
+                {review.added} <UiText message={' files added · '} />
+                {review.changed} <UiText message={' replaced · '} />
+                {review.removed} <UiText message={' removed'} />
+              </p>
+              <div className="backup-review-details">
+                <span className="badge">
+                  <Icon name="ShieldCheck" size={13} />
+                  <UiText message="Checksums verified" />
+                </span>
+                <span>
+                  {review.archiveFormat === 'tar'
+                    ? t('Streaming archive · version 3')
+                    : t('Compatible JSON archive')}
+                </span>
+                {review.unpackedBytes !== undefined && (
+                  <span>
+                    {formatBytes(review.unpackedBytes)} {t('unpacked')}
+                  </span>
+                )}
+              </div>
+              {review.archiveSha256 && (
+                <details className="backup-integrity">
+                  <summary>{t('Archive fingerprint')}</summary>
+                  <code>{review.archiveSha256}</code>
+                </details>
+              )}
               <Button
                 variant="primary"
                 icon="RotateCcw"
                 disabled={busy}
                 onClick={() => setConfirm(true)}
               >
-                <UiText message={"Restore reviewed notebook"}/></Button>
+                <UiText message={'Restore reviewed notebook'} />
+              </Button>
             </div>
           )}
         </section>
         <section className="settings-card glass-panel">
           <div className="settings-card-heading">
             <Icon name="HardDrive" />
-            <h2 data-ui={"Saved backups"}>{t("Saved backups")}</h2>
+            <h2 data-ui={'Saved backups'}>{t('Saved backups')}</h2>
           </div>
           <BackupCatalog
             items={items}
@@ -166,29 +218,49 @@ export function Backups({ onRestored }: { onRestored: () => Promise<void> }) {
       </div>
       {confirm && review && (
         <Modal
-          title={t("Restore this notebook?")}
+          title={t('Restore this notebook?')}
+          dismissible={!busy}
           onClose={() => {
             if (!busy) setConfirm(false);
           }}
           footer={
             <>
               <Button disabled={busy} onClick={() => setConfirm(false)}>
-                <UiText message={"Keep current notebook"}/></Button>
+                <UiText message={'Keep current notebook'} />
+              </Button>
               <Button
                 variant="primary"
                 icon="RotateCcw"
                 disabled={busy}
                 onClick={() => void restore()}
               >
-                {busy ? t("Restoring…") : t("Restore notebook")}
+                {busy ? t('Restoring…') : t('Restore notebook')}
               </Button>
             </>
           }
         >
           <p className="modal-intro">
-            <UiText message={"Restore “"}/>{review.name}<UiText message={"” with "}/>{review.entries} <UiText message={" entries and "}/>{review.media} <UiText message={" media files. A complete safety backup of the current notebook is created first."}/></p>
-          <p className="help" data-ui={"This updates local source. Build and publish when you want the restored version on the web."}>
-            {t("This updates local source. Build and publish when you want the restored version on the web.")}</p>
+            <UiText message={'Restore “'} />
+            {review.name}
+            <UiText message={'” with '} />
+            {review.entries} <UiText message={' entries and '} />
+            {review.media}{' '}
+            <UiText
+              message={
+                ' media files. A complete safety backup of the current notebook is created first.'
+              }
+            />
+          </p>
+          <p
+            className="help"
+            data-ui={
+              'This updates the private notebook. Build and publish when you want the restored version on the web.'
+            }
+          >
+            {t(
+              'This updates the private notebook. Build and publish when you want the restored version on the web.',
+            )}
+          </p>
         </Modal>
       )}
     </div>

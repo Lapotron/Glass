@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS cloud_transfers (id TEXT PRIMARY KEY, actor TEXT NOT NULL, purpose TEXT NOT NULL CHECK(purpose IN ('backup','file','object','migration')), key TEXT NOT NULL, upload_id TEXT NOT NULL, bytes INTEGER NOT NULL CHECK(bytes>0), fingerprint TEXT NOT NULL, name TEXT NOT NULL, target TEXT, sha TEXT, modified TEXT, job_id TEXT, state TEXT NOT NULL DEFAULT 'uploading' CHECK(state IN ('uploading','assembling','ready','cancelled')), created TEXT NOT NULL, expires TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS cloud_transfers_actor ON cloud_transfers(actor,purpose,expires);
+CREATE TABLE IF NOT EXISTS cloud_transfer_parts (id TEXT NOT NULL REFERENCES cloud_transfers(id), part INTEGER NOT NULL, bytes INTEGER NOT NULL, sha256 TEXT NOT NULL, etag TEXT NOT NULL, PRIMARY KEY(id,part));
+ALTER TABLE cloud_migrations ADD COLUMN recovery_key TEXT;

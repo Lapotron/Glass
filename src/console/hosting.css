@@ -134,6 +134,77 @@
   max-width: 80ch;
   margin: 8px 0 0;
 }
+.hosting-section-heading,
+.hosting-job-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.hosting-section-heading {
+  justify-content: space-between;
+}
+.hosting-section-heading h2 {
+  margin-bottom: 0;
+}
+.hosting-section-heading .help {
+  margin: 0;
+}
+.hosting-job-description {
+  flex: 1;
+}
+.hosting-job-actions {
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+.hosting-queue-notice {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+  padding: 16px 0;
+  border-block: 1px solid var(--line);
+  font-size: calc(13px * var(--font-scale));
+}
+.hosting-queue-notice > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--muted);
+}
+.hosting-build-help {
+  margin-top: 18px;
+  font-size: calc(13px * var(--font-scale));
+}
+.hosting-build-help > summary {
+  cursor: pointer;
+  color: var(--muted);
+  line-height: 1.6;
+}
+.hosting-build-fields {
+  margin: 12px 0;
+}
+.hosting-build-fields > div {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.hosting-build-fields dt {
+  color: var(--muted);
+  font-size: calc(11px * var(--font-scale));
+}
+.hosting-build-fields dd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 4px 0 0;
+}
+.hosting-build-fields code {
+  overflow-wrap: anywhere;
+  font-size: calc(12px * var(--font-scale));
+}
+.hosting-progress progress {
+  height: 6px;
+  accent-color: var(--accent);
+}
 .hosting-signout {
   display: flex;
   align-items: center;
@@ -147,6 +218,14 @@
   margin-left: auto;
 }
 @media (max-width: 760px) {
+  .hosting-jobs li {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .hosting-job-actions {
+    justify-content: flex-start;
+  }
   .hosting-layout {
     grid-template-columns: minmax(0, 1fr);
   }

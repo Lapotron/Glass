@@ -36,6 +36,11 @@ if (process.env.GLASS_CI_SECRETS) {
     'CF_ACCESS_CLIENT_ID',
     'CF_ACCESS_CLIENT_SECRET',
     'CLOUDFLARE_API_TOKEN',
+    'BUILDS_API_TOKEN',
+    'BUILDS_DEPLOY_HOOK',
+    'ACA_REPORT_TOKEN',
+    'R2_ACCESS_KEY_ID',
+    'R2_SECRET_ACCESS_KEY',
   ]);
   if (!values || Array.isArray(values) || typeof values !== 'object')
     throw new Error('GLASS_CI_SECRETS must be a private JSON object.');

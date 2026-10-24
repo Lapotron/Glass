@@ -1,11 +1,18 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import { sha, safePath, cloudFetch } from './cloud-client.js';
+import {
+  sha,
+  safePath,
+  cloudFetch,
+  responseToFile,
+  cloudFileHash,
+  uploadCloudMigration,
+} from './cloud-client.js';
 import { mapConcurrent } from '../src/engine/work-cache.js';
 import { z } from 'zod';
 import seed from '../tests/fixtures/notebook/site.json' with { type: 'json' };
 import { siteSchema } from '../src/shared/contracts.js';
-import { conflictingCloudChanges } from '../src/shared/cloud-migration.js';
+import { conflictingCloudChanges, validCloudExportPath } from '../src/shared/cloud-migration.js';
 const arg = (name: string) => {
   const i = process.argv.indexOf('--' + name);
   return i < 0 ? undefined : process.argv[i + 1];
@@ -22,6 +29,7 @@ const manifest = z
       .array(
         z.object({
           path: z.string(),
+          storagePath: z.string().refine(validCloudExportPath).optional(),
           sha: z.string().regex(/^[a-f0-9]{64}$/),
           bytes: z.number().int().nonnegative(),
           modified: z.string().optional(),
@@ -59,16 +67,12 @@ let conflicts = current.files.filter(
 );
 // Preserve every byte of the cloud notebook first, including newly saved private settings.
 await mapConcurrent(current.files, 8, async (file: any) => {
-  const bytes = Buffer.from(
-    await (
-      await cloudFetch('workspace/file?' + new URLSearchParams({ path: file.path }))
-    ).arrayBuffer(),
-  );
-  if (sha(bytes) !== file.sha)
-    throw new Error('Cloud files changed during the safety copy. Retry after saving.');
   const target = path.join(recovery, 'data', safePath(file.path));
-  await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
-  await fs.writeFile(target, bytes, { mode: 0o600 });
+  await responseToFile(
+    await cloudFetch('workspace/file?' + new URLSearchParams({ path: file.path })),
+    target,
+    file.sha,
+  );
 });
 await fs.writeFile(
   path.join(recovery, 'manifest.json'),
@@ -106,53 +110,60 @@ if (conflicts.length)
 const afterCopy = await (await cloudFetch('workspace')).json();
 if (current.version !== afterCopy.version)
   throw new Error('Cloud edits arrived during the safety copy. Retry after saving.');
-const overrides = new Map<string, Buffer>();
+const overrides = new Map<string, string>();
 for (const file of current.files) {
   if (file.path.startsWith('content/')) continue;
   const existing = imported.get(file.path);
   if (existing && existing.sha === file.sha) continue;
   if (existing && Date.parse(existing.modified || '1970-01-01') > Date.parse(file.modified))
     continue;
-  let bytes = await fs.readFile(path.join(recovery, 'data', safePath(file.path)));
+  let sourceFile = path.join(recovery, 'data', safePath(file.path));
   if (file.path === '.studio/connections.json' && existing) {
-    const old = JSON.parse(await fs.readFile(path.join(base, file.path), 'utf8'));
-    bytes = Buffer.from(JSON.stringify({ ...old, ...JSON.parse(bytes.toString('utf8')) }, null, 2));
+    const old = JSON.parse(
+      await fs.readFile(path.join(base, existing.storagePath || file.path), 'utf8'),
+    );
+    const bytes = Buffer.from(
+      JSON.stringify({ ...old, ...JSON.parse(await fs.readFile(sourceFile, 'utf8')) }, null, 2),
+    );
+    sourceFile = path.join(recovery, 'merged-connections.json');
+    await fs.writeFile(sourceFile, bytes, { mode: 0o600 });
   }
-  const retained = { ...file, sha: sha(bytes), bytes: bytes.length };
+  const retained = {
+    ...file,
+    sha: await cloudFileHash(sourceFile),
+    bytes: (await fs.stat(sourceFile)).size,
+  };
   if (existing) Object.assign(existing, retained);
   else manifest.files.push(retained);
-  overrides.set(file.path, bytes);
+  overrides.set(file.path, sourceFile);
 }
 await mapConcurrent(manifest.files, 12, async (file) => {
   safePath(file.path);
-  const target = path.join(base, file.path),
+  const target = path.join(base, file.storagePath || file.path),
     resolved = overrides.has(file.path) ? target : await fs.realpath(target);
   if (
     !overrides.has(file.path) &&
     (!resolved.startsWith(base + path.sep) || (await fs.lstat(target)).isSymbolicLink())
   )
     throw new Error('Migration files must remain inside the exported data directory.');
-  const bytes = overrides.get(file.path) || (await fs.readFile(target));
-  if (bytes.length !== file.bytes || sha(bytes) !== file.sha)
+  const sourceFile = overrides.get(file.path) || target;
+  if (
+    (await fs.stat(sourceFile)).size !== file.bytes ||
+    (await cloudFileHash(sourceFile)) !== file.sha
+  )
     throw new Error('Migration checksum failed: ' + file.path);
 });
 const session = await (await cloudFetch('migration', { method: 'POST' })).json();
 if (session.version !== current.version)
   throw new Error('The cloud notebook changed before import. No files were replaced.');
 let done = 0;
-await mapConcurrent(manifest.files, 8, async (file) => {
-  const bytes = overrides.get(file.path) || (await fs.readFile(path.join(base, file.path)));
-  const response = await (
-    await cloudFetch(
-      'migration/' + session.id + '/file?' + new URLSearchParams({ path: file.path }),
-      {
-        method: 'PUT',
-        body: new Uint8Array(bytes),
-        headers: file.modified ? { 'X-File-Modified': file.modified } : {},
-      },
-    )
-  ).json();
-  if (response.sha !== file.sha) throw new Error('Uploaded checksum mismatch: ' + file.path);
+await mapConcurrent(manifest.files, 2, async (file) => {
+  await uploadCloudMigration(
+    session.id,
+    overrides.get(file.path) || path.join(base, file.storagePath || file.path),
+    file.path,
+    file.modified,
+  );
   if (++done % 100 === 0 || done === manifest.files.length)
     console.log('Privately uploaded ' + done + ' / ' + manifest.files.length + ' files.');
 });

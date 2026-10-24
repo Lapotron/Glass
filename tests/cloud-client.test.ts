@@ -56,7 +56,7 @@ it.each([301, 302, 303, 307, 308])(
     expect(message).toContain('Cloudflare Access requires a machine login');
     expect(message).toContain('CF_ACCESS_CLIENT_ID');
     expect(message).toContain('Service Auth');
-    expect(message).toContain('For a first Studio deployment, omit GLASS_CI_TOKEN');
+    expect(message).toContain('For a first Studio deployment, supply CLOUDFLARE_API_TOKEN');
     expect(message).not.toMatch(/private-login-metadata|fixture-ci-token|fixture-access-secret/);
     expect(request).toHaveBeenCalledTimes(1);
   },

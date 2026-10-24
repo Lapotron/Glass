@@ -77,6 +77,7 @@ export async function requestBuild(
 }
 export async function trigger(env: CloudEnv, job: CloudJob) {
   const credentials = await new ConnectionSettings('/workspace', {
+    CLOUDFLARE_API_TOKEN: env.CLOUDFLARE_API_TOKEN,
     BUILDS_API_TOKEN: env.BUILDS_API_TOKEN,
     BUILDS_DEPLOY_HOOK: env.BUILDS_DEPLOY_HOOK,
   }).values();
@@ -95,7 +96,14 @@ export async function enqueue(
   workspace: CloudWorkspace,
   actor: Actor,
   kind: CloudJob['kind'] = 'api',
+  fixedId?: string,
 ) {
+  if (fixedId) {
+    const existing = await env.DB.prepare('SELECT * FROM cloud_jobs WHERE id=? AND actor=?')
+      .bind(fixedId, actor.id)
+      .first<CloudJob>();
+    if (existing) return existing;
+  }
   if (kind === 'api' && !queuedPath(new URL(request.url).pathname))
     throw new CloudError('This operation is not available as a cloud job.', 404);
   const active = await env.DB.prepare(
@@ -116,7 +124,7 @@ export async function enqueue(
       'The private monthly safety limit of 100 build jobs is reached. Review exact usage in Cloudflare before increasing the budget.',
       429,
     );
-  const id = crypto.randomUUID(),
+  const id = fixedId || crypto.randomUUID(),
     now = new Date().toISOString(),
     manifest = workspace.manifest();
   const selection = snapshotSelection(new URL(request.url).pathname);

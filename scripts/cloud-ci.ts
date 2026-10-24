@@ -13,7 +13,16 @@ import { recordCloudOwnership } from '../src/server/cloud-media.js';
 import { buildSite } from '../src/engine/build.js';
 import { createApp } from '../src/server/app.js';
 import { LauncherSettings } from '../src/server/configuration.js';
-import { claim, cloudFetch, materialize, filesUnder, uploadObject, sha } from './cloud-client.js';
+import {
+  claim,
+  cloudFetch,
+  materialize,
+  filesUnder,
+  uploadObject,
+  responseToFile,
+  uploadCloudFile,
+  cloudFileHash,
+} from './cloud-client.js';
 import { progressReporter } from './cloud-progress.js';
 import { mapConcurrent } from '../src/engine/work-cache.js';
 
@@ -58,6 +67,18 @@ await fs.mkdir(folder, { recursive: true });
 await fs.writeFile(path.join(folder, 'job.json'), JSON.stringify(job));
 let context: Awaited<ReturnType<typeof createApp>> | undefined;
 const progress = progressReporter(job.id);
+async function captureResponse(name: string, response: Response) {
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'glass-cloud-download-'));
+  const file = path.join(folder, 'download');
+  try {
+    await responseToFile(response, file);
+    await uploadCloudFile(job.id, file, 'object', name);
+  } finally {
+    await fs.rm(folder, { recursive: true, force: true });
+  }
+}
+const transient = (name: string) =>
+  /^\.studio\/(?:operations|imports|exports|backup-uploads|backup-work)\//.test(name);
 try {
   progress.log('Materializing the captured notebook snapshot.');
   await progress.phase('building');
@@ -92,6 +113,28 @@ try {
       launcher: new LauncherSettings(root, { notebookRoot: root, port: 4399 }),
     });
     context.scheduler.close();
+    const execute = async (
+      descriptor: { path: string; method: string },
+      headers: Record<string, string>,
+      body: ArrayBuffer | undefined,
+      sourceJob = job.id,
+    ) => {
+      if (descriptor.path === '/api/backups/review-upload') {
+        const input = JSON.parse(new TextDecoder().decode(body));
+        if (!/^[a-f0-9-]{36}$/.test(input.uploadId))
+          throw new Error('Invalid captured backup upload.');
+        const archive = path.join(root, '.studio/backup-uploads', input.uploadId, 'archive');
+        await responseToFile(await cloudFetch('jobs/' + sourceJob + '/backup-upload'), archive);
+        return Response.json(await context!.backups.inspectFile(archive));
+      }
+      return context!.app.fetch(
+        new Request('http://127.0.0.1:4399' + descriptor.path, {
+          method: descriptor.method,
+          headers,
+          body,
+        }),
+      );
+    };
     const headers: Record<string, string> = {
       Origin: 'http://127.0.0.1:4399',
       'X-Studio-Token': context.token,
@@ -108,13 +151,7 @@ try {
       const replayBody = replay.descriptor.hasBody
         ? await (await cloudFetch('jobs/' + replay.jobId + '/request')).arrayBuffer()
         : undefined;
-      const reviewed = await context.app.fetch(
-        new Request('http://127.0.0.1:4399' + replay.descriptor.path, {
-          method: replay.descriptor.method,
-          headers: replayHeaders,
-          body: replayBody,
-        }),
-      );
+      const reviewed = await execute(replay.descriptor, replayHeaders, replayBody, replay.jobId);
       const current = await reviewed.json();
       if (!reviewed.ok) throw new Error(current.error || 'The review could not be restored.');
       const nextId = (current.review || current).id;
@@ -128,18 +165,11 @@ try {
     const response =
       descriptor.path === '/api/schedule/prepare'
         ? Response.json({ promoted: await context.store.publishDue(new Date(job.created)) })
-        : await context.app.fetch(
-            new Request('http://127.0.0.1:4399' + descriptor.path, {
-              method: descriptor.method,
-              headers,
-              body,
-            }),
-          );
-    const bytes = Buffer.from(await response.arrayBuffer());
+        : await execute(descriptor, headers, body);
     if (response.headers.get('Content-Type')?.includes('application/json'))
-      result = { status: response.status, body: JSON.parse(bytes.toString('utf8')) };
+      result = { status: response.status, body: await response.json() };
     else {
-      await uploadObject(job.id, 'download', bytes);
+      await captureResponse('download', response);
       await uploadObject(
         job.id,
         'download.headers.json',
@@ -167,7 +197,7 @@ try {
           : field === 'backupUrl'
             ? 'recovery-backup'
             : 'download';
-        await uploadObject(job.id, name, new Uint8Array(await exported.arrayBuffer()));
+        await captureResponse(name, exported);
         await uploadObject(
           job.id,
           name + '.headers.json',
@@ -269,14 +299,7 @@ try {
       ),
       8,
       async (name) => {
-        const bytes = await fs.readFile(path.join(root, name));
-        await cloudFetch('jobs/' + job.id + '/file?' + new URLSearchParams({ path: name }), {
-          method: 'PUT',
-          headers: {
-            'X-File-Modified': (await fs.stat(path.join(root, name))).mtime.toISOString(),
-          },
-          body: new Uint8Array(bytes),
-        });
+        await uploadCloudFile(job.id, path.join(root, name), 'file', name);
       },
     );
   }
@@ -288,26 +311,20 @@ try {
       if (
         (name.startsWith('.studio/render-cache/') &&
           !name.startsWith('.studio/render-cache/mermaid/')) ||
-        name.startsWith('.studio/operations/')
+        transient(name)
       )
         return;
-      const bytes = await fs.readFile(path.join(root, name));
-      if (sha(bytes) !== before.get(name)) {
-        await cloudFetch('jobs/' + job.id + '/file?' + new URLSearchParams({ path: name }), {
-          method: 'PUT',
-          headers: {
-            'X-File-Modified': (await fs.stat(path.join(root, name))).mtime.toISOString(),
-          },
-          body: new Uint8Array(bytes),
-        });
+      if ((await cloudFileHash(path.join(root, name))) !== before.get(name)) {
+        await uploadCloudFile(job.id, path.join(root, name), 'file', name);
         changes.push({ path: name, key: 'staged' });
       }
       before.delete(name);
     });
     const deleted = [...before.keys()].filter(
       (name) =>
-        !name.startsWith('.studio/render-cache/') ||
-        name.startsWith('.studio/render-cache/mermaid/'),
+        !transient(name) &&
+        (!name.startsWith('.studio/render-cache/') ||
+          name.startsWith('.studio/render-cache/mermaid/')),
     );
     for (let index = 0; index < deleted.length; index += 1000) {
       const batch = deleted.slice(index, index + 1000);

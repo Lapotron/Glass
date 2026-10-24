@@ -43,6 +43,7 @@ const env = {
   ACCESS_ADMINS: 'fixture@example.test',
   STUDIO_ORIGIN: 'http://127.0.0.1:4398',
   SITE_ORIGIN: 'https://fixture.example.test',
+  SITE_WORKER: 'glass-site-fixture',
   WORKSPACE_ID: 'isolated-cloud-test',
   CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32),
   BUILDS_TRIGGER_ID: 'fixture-trigger',

@@ -169,7 +169,7 @@ test('portable backup download, import review, and restore preserve a safety cop
   const downloadEvent = page.waitForEvent('download');
   await page.getByRole('button', { name: 'Create & download backup' }).click();
   const download = await downloadEvent;
-  expect(download.suggestedFilename()).toMatch(/^glass-.*\.json\.gz$/);
+  expect(download.suggestedFilename()).toMatch(/^glass-.*\.tar\.gz$/);
   const file = await download.path();
   expect(file).toBeTruthy();
   const entry = await mutate(request, 'content', 'POST', {

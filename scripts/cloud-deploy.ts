@@ -6,6 +6,8 @@ import { cloudFetch, uploadObject } from './cloud-client.js';
 import { progressReporter } from './cloud-progress.js';
 import { prepareSiteRoute } from './cloud-routing.js';
 import { cloudMigrationsPending } from './cloud-migrations.js';
+import { hostedConnectionSecrets, withHostedSecrets } from './cloud-secrets.js';
+import { redactSecrets } from '../src/server/configuration.js';
 import { verifyPublishedDeployment } from '../src/server/deployment-check.js';
 import type { CloudJob } from '../src/cloud/jobs.js';
 import type { BuildResult, PublishResult } from '../src/shared/contracts.js';
@@ -18,18 +20,25 @@ const run = (args: string[]) => {
     encoding: 'utf8',
     maxBuffer: 8 * 1024 ** 2,
   });
-  if (result.stdout) process.stdout.write(result.stdout);
-  if (result.stderr) process.stderr.write(result.stderr);
+  if (result.stdout) process.stdout.write(redactSecrets(result.stdout, process.env));
+  if (result.stderr) process.stderr.write(redactSecrets(result.stderr, process.env));
   if (result.status !== 0)
     throw new Error('Cloudflare deployment failed. Inspect the retained build log.');
   return (result.stdout || '') + '\n' + (result.stderr || '');
 };
 if (target === 'studio') {
-  if (process.env.GLASS_CI_TOKEN)
+  hostedConnectionSecrets(process.env); // Reject preview credentials before any migration or deployment.
+  // A supplied Builds token already authorizes deployment, including bootstrap.
+  // Consult the coordinator only when no deployment credential was provided.
+  if (!process.env.CLOUDFLARE_API_TOKEN && process.env.GLASS_CI_TOKEN)
     Object.assign(process.env, await (await cloudFetch('deployment-credentials')).json());
   const settings = JSON.parse(await fs.readFile(config, 'utf8'));
   const existing = !!settings.d1_databases?.[0]?.database_id;
-  if (!existing) run(['deploy', '--config', config]);
+  const deploy = () =>
+    withHostedSecrets(process.env, async (file) => {
+      run(['deploy', '--config', config, ...(file ? ['--secrets-file', file] : [])]);
+    });
+  if (!existing) await deploy();
   const names = (await fs.readdir('infrastructure/cloud/migrations')).filter((name) =>
     name.endsWith('.sql'),
   );
@@ -44,7 +53,10 @@ if (target === 'studio') {
   )
     run(['d1', 'migrations', 'apply', 'DB', '--remote', '--config', config]);
   else console.log('D1 migration journal is current; no database writes needed.');
-  if (existing) run(['deploy', '--config', config]);
+  if (existing) await deploy();
+  console.log(
+    'Hosted connection defaults synchronized as runtime secrets. Explicit Studio credentials retain priority.',
+  );
 } else {
   const job = JSON.parse(await fs.readFile(path.join(directory, 'job.json'), 'utf8')) as CloudJob;
   const credentialFile = path.join(directory, 'deployment-credentials.json');

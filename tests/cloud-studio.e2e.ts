@@ -1,5 +1,11 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 import { projectsSchema } from '../src/shared/projects.js';
+import { promises as fs } from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
+import { createHash, randomBytes } from 'node:crypto';
+import { createLargeBackup, indexBackupFiles } from '../src/engine/backup-archive.js';
+import { cloudExportFilePath } from '../src/shared/cloud-migration.js';
 test.beforeEach(async ({ request }) => {
   // A settings screen can leave a captured read job finishing after its tab closes.
   // Keep the shared fixture idle before the next test starts a heavy operation.
@@ -258,6 +264,8 @@ test('hosting shows private storage and a queued backup completes through the cl
   const archive = await request.get('/api/backups/' + backups[0].id + '/download');
   expect(archive.ok()).toBe(true);
   expect(archive.headers()['content-type']).toContain('gzip');
+  const row = page.locator('.hosting-jobs li').filter({ hasText: '/api/backups' }).first();
+  await expect(row).toContainText('Complete', { timeout: 15000 });
 });
 test('hosted media audits distinguish a renamed revision from current missing references', async ({
   page,
@@ -362,4 +370,118 @@ test('captured backup restoration and reset recovery retain their reviewed sourc
   expect(blank.site.name).toBe(initial.site.name);
   const resets = await operation(request, 'notebook/reset', undefined, 'GET');
   expect(resets.recoveries.length).toBeGreaterThan(0);
+});
+
+test('Hosting imports a large media file through private multipart R2 and verifies the resulting bytes', async ({
+  page,
+  request,
+}) => {
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'glass-hosted-folder-'));
+  const headers = { Authorization: 'Bearer fixture-ci-only-not-production-123456789' };
+  const original = await (await request.get('/__ci/workspace', { headers })).json();
+  const checksum = (value: Buffer) => createHash('sha256').update(value).digest('hex');
+  let imported = false;
+  try {
+    for (const file of original.files) {
+      const response = await request.get(
+        '/__ci/workspace/file?' + new URLSearchParams({ path: file.path }),
+        { headers },
+      );
+      const target = path.join(folder, 'data', cloudExportFilePath(file.path));
+      await fs.mkdir(path.dirname(target), { recursive: true });
+      await fs.writeFile(target, await response.body());
+    }
+    const bytes = randomBytes(9 * 1024 ** 2),
+      name = 'content/media/hosted-multipart-' + test.info().project.name + '.bin';
+    await fs.mkdir(path.join(folder, 'data/content/media'), { recursive: true });
+    await fs.writeFile(path.join(folder, 'data', name), bytes);
+    const manifest = {
+      format: 'glass-cloud-workspace',
+      version: 1,
+      files: [
+        ...original.files.map((file: any) => ({
+          ...file,
+          storagePath: cloudExportFilePath(file.path),
+        })),
+        {
+          path: name,
+          bytes: bytes.length,
+          sha: checksum(bytes),
+          modified: new Date().toISOString(),
+        },
+      ],
+    };
+    await fs.writeFile(path.join(folder, 'manifest.json'), JSON.stringify(manifest));
+    let parts = 0;
+    page.on('request', (request) => {
+      if (/\/migration\/[^/]+\/uploads\/[^/]+\/parts\//.test(request.url())) parts++;
+    });
+    await page.goto('/#hosting');
+    await expect(page.getByLabel('Choose migration folder', { exact: true })).toBeEnabled();
+    await page.getByLabel('Choose migration folder', { exact: true }).setInputFiles(folder);
+    const dialog = page.getByRole('dialog', { name: 'Review notebook import', exact: true });
+    await expect(dialog).toBeVisible();
+    await dialog.getByRole('button', { name: 'Import reviewed notebook', exact: true }).click();
+    await expect(
+      page.getByText('Notebook imported. Reload Studio to open the cloud copy.', { exact: true }),
+    ).toBeVisible({ timeout: 60000 });
+    imported = true;
+    expect(parts).toBe(2);
+    const media = await request.get('/media/' + path.basename(name));
+    expect(media.ok()).toBe(true);
+    expect(checksum(await media.body())).toBe(checksum(bytes));
+    const state = await (await request.get('/__ci/workspace', { headers })).json();
+    expect(state.files.find((file: any) => file.path === name).bytes).toBe(bytes.length);
+    const archive = path.join(folder, 'cloud-import.tar.gz');
+    await createLargeBackup(
+      path.join(folder, 'data'),
+      archive,
+      await indexBackupFiles(path.join(folder, 'data')),
+    );
+    await page.goto('/#backups');
+    await page.getByLabel('Notebook backup', { exact: true }).setInputFiles(archive);
+    await expect(page.getByText('Checksums verified', { exact: true })).toBeVisible({
+      timeout: 60000,
+    });
+    await page.getByRole('button', { name: 'Restore reviewed notebook', exact: true }).click();
+    const restore = page.getByRole('dialog', { name: 'Restore this notebook?', exact: true });
+    await restore.getByRole('button', { name: 'Restore notebook', exact: true }).click();
+    await expect(
+      page.getByText(/^Notebook restored\. The previous notebook is saved as safety backup/),
+    ).toBeVisible({ timeout: 60000 });
+    const restored = await request.get('/media/' + path.basename(name));
+    expect(checksum(await restored.body())).toBe(checksum(bytes));
+    await page.setViewportSize({ width: 320, height: 900 });
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1))
+      .toBe(true);
+  } finally {
+    if (imported) {
+      const status = await (await request.get('/api/cloud/status')).json();
+      const session = await mutate(request, 'cloud/migration', 'POST', { version: status.version });
+      const state = await (await request.get('/api/bootstrap')).json();
+      for (const file of original.files) {
+        const result = await request.put(
+          '/api/cloud/migration/' +
+            session.id +
+            '/file?' +
+            new URLSearchParams({ path: file.path }),
+          {
+            headers: {
+              Origin: 'http://127.0.0.1:4398',
+              'X-Studio-Token': state.token,
+              'Content-Type': 'application/octet-stream',
+              'X-File-Modified': file.modified,
+            },
+            data: await fs.readFile(path.join(folder, 'data', cloudExportFilePath(file.path))),
+          },
+        );
+        expect(result.ok(), await result.text()).toBe(true);
+      }
+      await mutate(request, 'cloud/migration/' + session.id + '/commit', 'POST', {
+        files: original.files,
+      });
+    }
+    await fs.rm(folder, { recursive: true, force: true });
+  }
 });

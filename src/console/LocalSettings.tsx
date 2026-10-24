@@ -215,25 +215,23 @@ export function ConnectionControls({
           </>
         )}
       </section>
-      <p
-        className="help"
-        data-ui={
-          'Saved on this computer, separately from your notebook and portable backups. Leave a field empty to keep its saved value.'
-        }
-      >
-        {t(
-          'Saved on this computer, separately from your notebook and portable backups. Leave a field empty to keep its saved value.',
-        )}
+      <p className="help">
+        {isCloudStudio()
+          ? t(
+              'Cloudflare deployments supply encrypted connection defaults automatically. Enter a value here only to override that default. Credentials stay private and are excluded from portable backups.',
+            )
+          : t(
+              'Saved on this computer, separately from your notebook and portable backups. Leave a field empty to keep its saved value.',
+            )}
       </p>
-      <p
-        className="help"
-        data-ui={
-          'Pages needs an API token with Account → Cloudflare Pages → Edit scoped to your selected account. Enter R2 S3 credentials in their separate fields below.'
-        }
-      >
-        {t(
-          'Pages needs an API token with Account → Cloudflare Pages → Edit scoped to your selected account. Enter R2 S3 credentials in their separate fields below.',
-        )}
+      <p className="help">
+        {isCloudStudio()
+          ? t(
+              'Automatic setup reuses credentials supplied to the Studio build; it cannot grant extra API permissions. Access service credentials remain in Builds. R2 S3 credentials are optional separate defaults.',
+            )
+          : t(
+              'Pages needs an API token with Account → Cloudflare Pages → Edit scoped to your selected account. Enter R2 S3 credentials in their separate fields below.',
+            )}
       </p>
       <fieldset className="private-fields" disabled={busy || !summary}>
         {connectionFields.map((key) => (
@@ -244,9 +242,13 @@ export function ConnectionControls({
               remove.includes(key)
                 ? t('Removal pending.')
                 : summary?.fields[key].source === 'studio'
-                  ? t('Saved locally.')
+                  ? isCloudStudio()
+                    ? t('Saved privately in Cloudflare.')
+                    : t('Saved locally.')
                   : summary?.fields[key].source === 'environment'
-                    ? t('Available from the server environment.')
+                    ? isCloudStudio()
+                      ? t('Provided by the Cloudflare deployment.')
+                      : t('Available from the server environment.')
                     : t('No credential saved.')
             }
           >

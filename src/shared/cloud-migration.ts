@@ -1,3 +1,12 @@
+/** Folder pickers may omit hidden .studio directories; preserve logical paths separately. */
+export const cloudExportFilePath = (name: string) =>
+  name.startsWith('.studio/') ? 'private/' + name.slice(8) : name;
+export const validCloudExportPath = (name: unknown): name is string =>
+  typeof name === 'string' &&
+  name.length <= 2048 &&
+  !/[\\\0]/.test(name) &&
+  name.split('/').every((part) => part !== '' && part !== '.' && part !== '..');
+
 /** Cloud changes may be replaced only when unchanged from the seed or already in the import. */
 export function conflictingCloudChanges(
   seed: unknown,

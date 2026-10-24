@@ -8,7 +8,7 @@ import { promisify } from 'node:util';
 import { Store, digest } from '../src/engine/store.js';
 import { Operations } from '../src/engine/operations.js';
 import { commitFiles } from '../src/engine/file-transaction.js';
-import { BackupService } from '../src/engine/backup.js';
+import { BackupService, backupArchiveName } from '../src/engine/backup.js';
 import { MediaService } from '../src/engine/media.js';
 import { MediaMaintenance, markdownMedia } from '../src/engine/media-maintenance.js';
 import { Exports } from '../src/engine/exports.js';
@@ -431,6 +431,6 @@ it('holds automatic backup failures until retry and preserves archive integrity 
   expect(retried).toHaveProperty('backup');
   expect((await scheduler.summary()).value.error).toBe('');
   const record = (await backups.list())[0];
-  await fs.appendFile(path.join(root, '.studio/backups', record.id + '.json.gz'), 'corrupt');
+  await fs.appendFile(path.join(root, '.studio/backups', backupArchiveName(record)), 'corrupt');
   await expect(backups.download(record.id)).rejects.toThrow('checksum');
 });

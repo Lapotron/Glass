@@ -188,15 +188,10 @@ For this FIRST deployment, create an encrypted BUILD secret named GLASS_CI_SECRE
   "CLOUDFLARE_API_TOKEN": "<deployment-api-token>"
 }
 
-CRITICAL BOOTSTRAP RULE:
-Do not include GLASS_CI_TOKEN yet. Remove any standalone build variable named GLASS_CI_TOKEN too.
+CURRENT BOOTSTRAP BEHAVIOR:
+The deploy script uses an available build deployment API token directly; it does not contact an unavailable coordinator first. It deploys build-supplied connection defaults as encrypted runtime secrets using a private, temporary Wrangler secrets file. The optional GLASS_CI_TOKEN maps to runtime CI_TOKEN. Never regenerate or replace STUDIO_SECRET.
 
-When GLASS_CI_TOKEN is present, the deploy script first contacts the running Studio to retrieve saved deployment credentials. A first or recreated installation is not ready for that request. This can fail with:
-
-TypeError: fetch failed
-cause: Error: unexpected redirect
-
-Keep the runtime CI_TOKEN and STUDIO_SECRET. Remove only the premature BUILD-side GLASS_CI_TOKEN.
+For older releases that always contact Studio whenever GLASS_CI_TOKEN is present, use the token-only bootstrap JSON above and remove any premature standalone build GLASS_CI_TOKEN. Update the source before relying on automatic connection defaults.
 
 Start the Studio deployment. The custom deploy script handles missing D1 migrations and Worker deployment.
 
@@ -206,13 +201,13 @@ After deployment, have me:
 - Open https://console.example.com/
 - Sign in as admin@example.com.
 - Confirm that the Studio interface loads.
-- Save the deployment API token in Studio → Site settings → Credentials.
+- Verify Studio → Site settings → Credentials reports its Cloudflare token as provided by the deployment; a second token entry is not needed. Explicit saved Studio credentials override defaults for Studio operations.
 
 Do not move to the complete CI configuration until these steps are finished.
 
 7. ENABLE NORMAL CI AND THE READER PIPELINE
 
-After Studio works and its deployment token is saved, replace the Studio's bootstrap GLASS_CI_SECRETS with:
+After Studio works, replace the Studio's bootstrap GLASS_CI_SECRETS with:
 
 {
   "CLOUDFLARE_API_TOKEN": "<deployment-api-token>",
@@ -300,7 +295,7 @@ If compilation succeeds but deployment fails:
 - Large compiler chunks and Lucide "use client" warnings do not explain an Access redirect.
 
 If CI reaches an Access login redirect:
-- During first deployment, remove premature GLASS_CI_TOKEN.
+- On older releases, bootstrap with token-only secrets. Current code uses the provided deployment token directly.
 - During normal updates, check the Access service-token pair, expiration and Service Auth policy.
 - Check the exact Studio origin.
 - Never enable redirect following or forward credentials to a login page.
@@ -309,7 +304,7 @@ If Studio returns "Build authentication required":
 - Check build GLASS_CI_TOKEN against runtime CI_TOKEN.
 
 If Studio says to save the deployment token:
-- Save it in Studio Credentials before enabling normal CI.
+- Redeploy current source with the deployment token available in Builds, or explicitly save a Studio override. Automatic synchronization cannot grant missing token permissions.
 
 If the reader says no approved release exists:
 - Publish from Studio; a dashboard retry cannot create approval.

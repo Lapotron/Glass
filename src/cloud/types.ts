@@ -11,6 +11,9 @@ export interface Database {
   exec(sql: string): Promise<unknown>;
 }
 export interface Bucket {
+  head(key: string): Promise<null | { size: number; customMetadata?: Record<string, string> }>;
+  createMultipartUpload(key: string): Promise<MultipartUpload>;
+  resumeMultipartUpload(key: string, uploadId: string): MultipartUpload;
   get(
     key: string,
     options?: unknown,
@@ -28,6 +31,12 @@ export interface Bucket {
   ): Promise<unknown>;
   delete(key: string | string[]): Promise<void>;
 }
+export interface MultipartUpload {
+  uploadId: string;
+  uploadPart(part: number, value: Uint8Array): Promise<{ partNumber: number; etag: string }>;
+  complete(parts: { partNumber: number; etag: string }[]): Promise<{ size: number }>;
+  abort(): Promise<void>;
+}
 export type CloudEnv = {
   DB: Database;
   BUCKET: Bucket;
@@ -39,12 +48,14 @@ export type CloudEnv = {
   STUDIO_ORIGIN: string;
   SITE_ORIGIN: string;
   SITE_STAGING_ORIGIN?: string;
+  SITE_WORKER?: string;
   PRODUCTION_BRANCH?: string;
   WORKSPACE_ID: string;
   CLOUDFLARE_ACCOUNT_ID: string;
   BUILDS_TRIGGER_ID: string;
   BUILDS_API_TOKEN: string;
   BUILDS_DEPLOY_HOOK?: string;
+  CLOUDFLARE_API_TOKEN?: string;
   CI_TOKEN: string;
   PREVIEW?: string;
   STORAGE_BUDGET_BYTES?: string;

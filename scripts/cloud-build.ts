@@ -61,6 +61,7 @@ if (mode === 'studio') {
   const vars: Record<string, string> = {
     STUDIO_ORIGIN: process.env.GLASS_STUDIO_ORIGIN || 'https://console.example.com',
     SITE_ORIGIN: process.env.GLASS_SITE_ORIGIN || 'https://example.com',
+    SITE_WORKER: process.env.GLASS_SITE_WORKER || 'glass-site',
     WORKSPACE_ID: process.env.GLASS_WORKSPACE_ID || 'glass',
     PRODUCTION_BRANCH: process.env.GLASS_PRODUCTION_BRANCH || 'main',
     SITE_STAGING_ORIGIN:

@@ -19,7 +19,8 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { streamSSE, stream } from 'hono/streaming';
 import { randomBytes, randomUUID } from 'node:crypto';
-import { promises as fs, watch } from 'node:fs';
+import { promises as fs, watch, createReadStream } from 'node:fs';
+import { Readable } from 'node:stream';
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
 import sharp from 'sharp';
@@ -37,7 +38,8 @@ import { createRenderer } from '../site/pages.js';
 import { serializeEntry } from '../engine/store.js';
 import { entrySchema, siteSchema, publicEntry, routeFor, type Job } from '../shared/contracts.js';
 import { JobService, authStatus, listPagesProjects, createPagesProject } from './publishing.js';
-import { BackupService } from '../engine/backup.js';
+import { BackupService, backupArchiveName } from '../engine/backup.js';
+import { BackupUploads } from './backup-uploads.js';
 import { Scheduler } from './scheduler.js';
 import { checkDiscussionConfiguration, discussionCheckSchema } from './discussions.js';
 import { annotationReader } from '../shared/annotations.js';
@@ -126,6 +128,7 @@ export async function createApp(
   changes.setMaxListeners(100);
   const previews = new Map<string, string>();
   const backups = new BackupService(store);
+  const backupUploads = new BackupUploads(backups);
   const media = new MediaService(store);
   const readAnnotations = annotationReader(options.annotationFetch);
   const scheduler: Scheduler = new Scheduler(
@@ -910,16 +913,39 @@ export async function createApp(
   );
   app.post('/api/schedule/run', async (c) => c.json(await scheduler.runDue(true)));
   app.get('/api/backups', async (c) => c.json(await store.exclusive(() => backups.list())));
-  app.post('/api/backups', async (c) => c.json(await backups.create(), 201));
-  app.get('/api/backups/:id/download', async (c) =>
-    c.newResponse(await store.exclusive(() => backups.download(c.req.param('id'))), {
+  app.post('/api/backups', async (c) => {
+    const input = z
+      .object({ format: z.enum(['large', 'legacy']).default('large') })
+      .parse(c.req.raw.body ? await c.req.json() : {});
+    return c.json(await backups.create('manual', input.format), 201);
+  });
+  app.post('/api/backups/uploads', async (c) =>
+    c.json(await backupUploads.start(await c.req.json()), 201),
+  );
+  app.get('/api/backups/uploads/:upload', async (c) =>
+    c.json(await backupUploads.status(c.req.param('upload'))),
+  );
+  app.put('/api/backups/uploads/:upload/parts/:part', async (c) =>
+    c.json(await backupUploads.part(c.req.param('upload'), Number(c.req.param('part')), c.req.raw)),
+  );
+  app.post('/api/backups/uploads/:upload/complete', async (c) => {
+    const input=z.object({requestId:z.uuid().optional()}).parse(c.req.raw.body ? await c.req.json() : {});
+    return c.json(await backupUploads.complete(c.req.param('upload'),!!input.requestId));
+  });
+  app.delete('/api/backups/uploads/:upload', async (c) =>
+    c.json(await backupUploads.discard(c.req.param('upload'))),
+  );
+  app.get('/api/backups/:id/download', async (c) => {
+    const { file, record } = await store.exclusive(() => backups.downloadFile(c.req.param('id')));
+    return c.newResponse(Readable.toWeb(createReadStream(file)) as ReadableStream, {
       headers: {
         'Content-Type': 'application/gzip',
-        'Content-Disposition': `attachment; filename="glass-${c.req.param('id')}.json.gz"`,
+        'Content-Disposition': `attachment; filename="glass-${backupArchiveName(record)}"`,
+        'Content-Length': String(record.bytes),
         'Cache-Control': 'no-store',
       },
-    }),
-  );
+    });
+  });
   app.post('/api/backups/review', bodyLimit({ maxSize: 130 * 1024 * 1024 }), async (c) => {
     const data = await c.req.formData(),
       file = data.get('file');
@@ -927,7 +953,7 @@ export async function createApp(
     return c.json(await backups.inspect(new Uint8Array(await file.arrayBuffer())));
   });
   app.post('/api/backups/:id/review', async (c) =>
-    c.json(await backups.inspect(await backups.download(c.req.param('id')))),
+    c.json(await backups.inspectSaved(c.req.param('id'))),
   );
   app.post('/api/backups/:id/restore', async (c) => {
     await acaDeployment.assertIdle();
@@ -1348,6 +1374,7 @@ export async function createApp(
     jobs,
     acaDeployment,
     scheduler,
+    backups,
     token,
     close: () => {
       scheduler.close();

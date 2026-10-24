@@ -1,4 +1,4 @@
-import { startMigration, uploadMigration, finishMigration } from './migration.js';
+import { startMigration, uploadMigration, finishMigration, migrationSession } from './migration.js';
 import { putObject } from './storage.js';
 import { Hono } from 'hono';
 import { z } from 'zod';
@@ -19,6 +19,8 @@ import { effectiveMediaCode, mediaLinkMap } from '../engine/media-links.js';
 import { serveMcp } from './mcp.js';
 import { hash } from './types.js';
 import { backupSettingsSchema } from '../shared/operations.js';
+import { CloudTransfers, boundedUploadBody } from './transfers.js';
+import { BACKUP_CHUNK_BYTES } from '../shared/backup-transfer.js';
 import { cloudSchedule } from './schedule.js';
 import { deferApprovedBuild, deferredBuildStatus, runDeferredBuild } from './deferred.js';
 import { history, cloudJobRecord, persistHistory } from './history.js';
@@ -30,6 +32,7 @@ import { resolveEntrySettings } from '../shared/entry-settings.js';
 import { acaSummary, saveAca } from './services.js';
 import { HealthService } from '../server/health.js';
 import { serviceReadiness } from '../server/service-readiness.js';
+import { MediaProtectionService } from '../server/media-protection.js';
 import { discussionCheckSchema, checkDiscussionConfiguration } from '../server/discussions.js';
 import { discussionThemePreview } from '../engine/discussion-preview.js';
 import { siteSchema } from '../shared/contracts.js';
@@ -181,7 +184,8 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
       ) ||
       /^\/api\/(?:cloud-jobs\/|cloud\/(?:pulse$|mcp-keys(?:\/|$)|migration(?:\/|$)))/.test(
         c.req.path,
-      )
+      ) ||
+      /^\/api\/backups\/uploads(?:\/|$)/.test(c.req.path)
     ) {
       await next();
       return;
@@ -199,7 +203,7 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
         .run();
     const workingSet =
       c.req.path === '/mcp' ||
-      /^\/api\/(?:bootstrap$|jobs$|content(?:$|\/[\w-]+(?:\/(?:download|revisions.*))?$)|pages\/about(?:\/|$)|site$|library$|projects$|maintenance$|health$|cloud\/status$|connections(?:\/|$)|analytics(?:[-/]|$)|media(?:$|\/(?:metadata|details)$)|schedule$|aca\/deployment$|services\/readiness$|integrations\/)/.test(
+      /^\/api\/(?:bootstrap$|jobs$|content(?:$|\/[\w-]+(?:\/(?:download|revisions.*))?$)|pages\/about(?:\/|$)|site$|library$|projects$|maintenance$|health$|cloud\/status$|cloud-media\/protection$|connections(?:\/|$)|analytics(?:[-/]|$)|media(?:$|\/(?:metadata|details)$)|schedule$|aca\/deployment$|services\/readiness$|integrations\/)/.test(
         c.req.path,
       );
     const workspace = await new CloudWorkspace(c.env).load(workingSet);
@@ -273,14 +277,17 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
     const record = await c.env.DB.prepare(
       "SELECT * FROM cloud_files WHERE path='.studio/connections.json'",
     ).first<import('./types.js').FileRecord>();
-    if (!record)
-      throw new CloudError('Save the deployment token in Studio Credentials first.', 503);
     const ws = new CloudWorkspace(c.env);
-    ws.files.set(record.path, record);
+    if (record) ws.files.set(record.path, record);
     return withWorkspace(ws, async () => {
-      const values = await new ConnectionSettings(base).values();
+      const values = await new ConnectionSettings(base, {
+        CLOUDFLARE_API_TOKEN: c.env.CLOUDFLARE_API_TOKEN,
+      }).values();
       if (!values.CLOUDFLARE_API_TOKEN)
-        throw new CloudError('Save the deployment token in Studio Credentials first.', 503);
+        throw new CloudError(
+          'Redeploy Studio with a Cloudflare build API token, or save a deployment token in Studio Credentials.',
+          503,
+        );
       return json({ CLOUDFLARE_API_TOKEN: values.CLOUDFLARE_API_TOKEN });
     });
   });
@@ -350,6 +357,63 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
   app.get('/__ci/jobs/:id/request', async (c) => {
     const object = await c.env.BUCKET.get('jobs/' + c.req.param('id') + '/request');
     return object ? new Response(object.body) : new Response(null, { status: 204 });
+  });
+  const transferJob = async (c: any) => {
+    const job = await c.env.DB.prepare("SELECT * FROM cloud_jobs WHERE id=? AND state='running'")
+      .bind(c.req.param('id'))
+      .first();
+    if (!job) throw new CloudError('No active job.', 409);
+    return job as CloudJob;
+  };
+  app.post('/__ci/jobs/:id/transfers', async (c) => {
+    const job = await transferJob(c),
+      data = await c.req.json();
+    if (!['file', 'object'].includes(data.purpose))
+      throw new CloudError('Invalid transfer destination.');
+    return json(
+      await new CloudTransfers(c.env).start(job.actor, data, {
+        purpose: data.purpose,
+        target: data.target,
+        sha: data.sha,
+        modified: data.modified,
+        job: job.id,
+      }),
+    );
+  });
+  app.put('/__ci/jobs/:id/transfers/:transfer/parts/:part', async (c) => {
+    const job = await transferJob(c),
+      service = new CloudTransfers(c.env),
+      row = await service.row(c.req.param('transfer'), job.actor);
+    if (row.job_id !== job.id || row.purpose === 'backup')
+      throw new CloudError('This transfer is outside the active job.', 403);
+    return json(await service.part(row.id, job.actor, Number(c.req.param('part')), c.req.raw));
+  });
+  app.post('/__ci/jobs/:id/transfers/:transfer/complete', async (c) => {
+    const job = await transferJob(c),
+      service = new CloudTransfers(c.env),
+      row = await service.row(c.req.param('transfer'), job.actor);
+    if (row.job_id !== job.id || row.purpose === 'backup')
+      throw new CloudError('This transfer is outside the active job.', 403);
+    await service.finish(row.id, job.actor);
+    return json({ ok: true });
+  });
+  app.get('/__ci/jobs/:id/backup-upload', async (c) => {
+    const job = await c.env.DB.prepare('SELECT * FROM cloud_jobs WHERE id=?')
+      .bind(c.req.param('id'))
+      .first<CloudJob>();
+    if (!job || JSON.parse(job.request).path !== '/api/backups/review-upload')
+      throw new CloudError('This job has no uploaded backup.', 404);
+    const request = await c.env.BUCKET.get('jobs/' + job.id + '/request');
+    if (!request) throw new CloudError('The captured backup request is missing.');
+    const input = JSON.parse(await request.text()),
+      row = await new CloudTransfers(c.env).row(input.uploadId, job.actor);
+    if (row.purpose !== 'backup' || row.state !== 'ready')
+      throw new CloudError('This backup is outside the captured job.', 403);
+    const archive = await c.env.BUCKET.get(row.key);
+    if (!archive) throw new CloudError('The uploaded archive is missing.', 404);
+    return new Response(archive.body, {
+      headers: { 'Content-Type': 'application/gzip', 'Content-Length': String(archive.size) },
+    });
   });
   app.put('/__ci/jobs/:id/object/:key', async (c) => {
     const id = c.req.param('id'),
@@ -447,7 +511,7 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
     if (
       input.status < 400 &&
       input.resultKey &&
-      /\/review(?:[/?]|$)/.test(JSON.parse(job.request).path || '')
+      /\/review(?:-upload)?(?:[/?]|$)/.test(JSON.parse(job.request).path || '')
     ) {
       const object = await c.env.BUCKET.get('jobs/' + job.id + '/objects/' + input.resultKey);
       if (object) {
@@ -591,7 +655,7 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
         c.env,
         'job-' + c.req.param('id'),
         c.req.query('path') || '',
-        new Uint8Array(await c.req.arrayBuffer()),
+        await boundedUploadBody(c.req.raw, BACKUP_CHUNK_BYTES),
         c.req.header('X-File-Modified'),
       ),
     );
@@ -641,11 +705,69 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
         c.req.param('id'),
         c.get('actor').id,
         c.req.query('path') || '',
-        new Uint8Array(await c.req.arrayBuffer()),
+        await boundedUploadBody(c.req.raw, BACKUP_CHUNK_BYTES),
         c.req.header('X-File-Modified'),
       ),
     ),
   );
+  app.get('/api/cloud/migration/:id', async (c) => {
+    const id = z.uuid().parse(c.req.param('id'));
+    const record = await c.env.DB.prepare(
+      'SELECT state,version FROM cloud_migrations WHERE id=? AND actor=?',
+    )
+      .bind(id, c.get('actor').id)
+      .first();
+    if (!record) throw new CloudError('Import session not found.', 404);
+    const files = await c.env.DB.prepare(
+      'SELECT path,sha,bytes FROM cloud_patches WHERE id=? AND sha IS NOT NULL',
+    )
+      .bind('migration-' + id)
+      .all();
+    return json({ ...record, files: files.results });
+  });
+  const migrationActor = (c: any) =>
+    c.req.path.startsWith('/__ci/') ? 'initial-migration' : c.get('actor').id;
+  const startMigrationUpload = async (c: any) => {
+    const actor = migrationActor(c),
+      id = c.req.param('id'),
+      data = await c.req.json();
+    await migrationSession(c.env, id, actor);
+    return json(
+      await new CloudTransfers(c.env).start(actor, data, {
+        purpose: 'migration',
+        target: data.path,
+        sha: data.sha,
+        modified: data.modified,
+        job: id,
+      }),
+      201,
+    );
+  };
+  app.post('/api/cloud/migration/:id/uploads', startMigrationUpload);
+  app.post('/__ci/migration/:id/uploads', startMigrationUpload);
+  const migrationTransfer = async (c: any) => {
+    const actor = migrationActor(c),
+      id = c.req.param('id');
+    await migrationSession(c.env, id, actor);
+    const service = new CloudTransfers(c.env),
+      row = await service.row(c.req.param('transfer'), actor);
+    if (row.purpose !== 'migration' || row.job_id !== id)
+      throw new CloudError('This transfer is outside the import.', 403);
+    return { service, row, actor };
+  };
+  const uploadMigrationPart = async (c: any) => {
+    const { service, row, actor } = await migrationTransfer(c);
+    return json(await service.part(row.id, actor, Number(c.req.param('part')), c.req.raw));
+  };
+  app.put('/api/cloud/migration/:id/uploads/:transfer/parts/:part', uploadMigrationPart);
+  app.put('/__ci/migration/:id/uploads/:transfer/parts/:part', uploadMigrationPart);
+  const completeMigrationUpload = async (c: any) => {
+    const { service, row, actor } = await migrationTransfer(c);
+    await service.finish(row.id, actor);
+    return json({ path: row.target, sha: row.sha, bytes: row.bytes });
+  };
+  app.post('/api/cloud/migration/:id/uploads/:transfer/complete', completeMigrationUpload);
+  app.post('/__ci/migration/:id/uploads/:transfer/complete', completeMigrationUpload);
   app.post('/api/cloud/migration/:id/commit', async (c) =>
     json(await finishMigration(c.env, c.req.param('id'), c.get('actor').id, await c.req.json())),
   );
@@ -668,7 +790,7 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
         c.req.param('id'),
         'initial-migration',
         c.req.query('path') || '',
-        new Uint8Array(await c.req.arrayBuffer()),
+        await boundedUploadBody(c.req.raw, BACKUP_CHUNK_BYTES),
         c.req.header('X-File-Modified'),
       ),
     ),
@@ -724,14 +846,15 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
       version: c.get('workspace').version,
       studioOrigin: c.env.STUDIO_ORIGIN,
       siteOrigin: c.env.SITE_ORIGIN,
+      accountId: c.env.CLOUDFLARE_ACCOUNT_ID || '',
+      siteWorker: c.env.SITE_WORKER || '',
       preview: c.env.PREVIEW === 'true',
       accessTeam: c.env.ACCESS_TEAM,
       buildsConfigured: !!(
-        c.env.BUILDS_DEPLOY_HOOK ||
+        (await connections(c).values()).BUILDS_DEPLOY_HOOK ||
         (c.env.BUILDS_TRIGGER_ID &&
-          (c.env.BUILDS_API_TOKEN ||
-            (await new ConnectionSettings(base).values()).CLOUDFLARE_API_TOKEN)) ||
-        (await new ConnectionSettings(base).values()).BUILDS_DEPLOY_HOOK
+          ((await connections(c).values()).BUILDS_API_TOKEN ||
+            (await connections(c).values()).CLOUDFLARE_API_TOKEN))
       ),
       physicalStorage: await c.env.DB.prepare(
         'SELECT bytes,budget FROM cloud_storage WHERE id=1',
@@ -751,6 +874,9 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
       ) as NodeJS.ProcessEnv,
     );
   app.get('/api/connections', async (c) => json(await connections(c).summary()));
+  app.get('/api/cloud-media/protection', async (c) =>
+    json(await new MediaProtectionService(c.get('store'), connections(c)).status()),
+  );
   app.put('/api/connections', async (c) => json(await connections(c).update(await c.req.json())));
   app.post('/api/connections/import-environment', async (c) =>
     json(await connections(c).importEnvironment((await c.req.json()).revision)),
@@ -949,7 +1075,9 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
       .filter((p) => /^\.studio\/backups\/\d+-[a-f0-9-]+\.json$/.test(p))) {
       const raw = new TextDecoder().decode(await ws.read(path)),
         record = JSON.parse(raw),
-        archive = ws.files.get(path + '.gz');
+        archive = ws.files.get(
+          path.slice(0, -5) + (record.archiveFormat === 'tar' ? '.tar.gz' : '.json.gz'),
+        );
       records.push({
         ...record,
         revision: digest(
@@ -959,6 +1087,45 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
       });
     }
     return json(records.sort((a, b) => b.createdAt.localeCompare(a.createdAt)));
+  });
+  app.post('/api/backups/uploads', async (c) =>
+    json(await new CloudTransfers(c.env).start(c.get('actor').id, await c.req.json()), 201),
+  );
+  app.get('/api/backups/uploads/:upload', async (c) => {
+    const service = new CloudTransfers(c.env),
+      row = await service.row(c.req.param('upload'), c.get('actor').id);
+    if (row.purpose !== 'backup') throw new CloudError('This is not a backup upload.', 403);
+    return json(await service.status(row.id, row.actor));
+  });
+  app.put('/api/backups/uploads/:upload/parts/:part', async (c) => {
+    const service = new CloudTransfers(c.env),
+      row = await service.row(c.req.param('upload'), c.get('actor').id);
+    if (row.purpose !== 'backup') throw new CloudError('This is not a backup upload.', 403);
+    return json(await service.part(row.id, row.actor, Number(c.req.param('part')), c.req.raw));
+  });
+  app.delete('/api/backups/uploads/:upload', async (c) =>
+    json(await new CloudTransfers(c.env).discard(c.req.param('upload'), c.get('actor').id)),
+  );
+  app.post('/api/backups/uploads/:upload/complete', async (c) => {
+    const service = new CloudTransfers(c.env),
+      actor = c.get('actor'),
+      row = await service.row(c.req.param('upload'), actor.id);
+    if (row.purpose !== 'backup') throw new CloudError('This is not a backup upload.', 403);
+    await service.finish(row.id, actor.id);
+    const input = await c.req.json().catch(() => ({}));
+    const requested =
+      input.requestId === undefined ? row.job_id || row.id : z.uuid().parse(input.requestId);
+    const ws = await new CloudWorkspace(c.env).load();
+    const request = new Request(c.env.STUDIO_ORIGIN + '/api/backups/review-upload', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uploadId: row.id }),
+    });
+    await c.env.DB.prepare('UPDATE cloud_transfers SET job_id=? WHERE id=?')
+      .bind(requested, row.id)
+      .run();
+    const job = await withWorkspace(ws, () => enqueue(request, c.env, ws, actor, 'api', requested));
+    return json({ cloudJob: job.id }, 202);
   });
   app.get('/api/backup-settings', async (c) =>
     json({
@@ -1000,14 +1167,20 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
   app.post('/api/schedule/run', async (c) => json(await cloudSchedule(c.env, true)));
   app.get('/api/backups/:id/download', async (c) => {
     if (!/^\d+-[a-f0-9-]+$/.test(c.req.param('id'))) throw new CloudError('Invalid backup.');
-    const file = await privateFile(c.env, '.studio/backups/' + c.req.param('id') + '.json.gz');
+    const metadata = await readObject(
+      c.env,
+      await privateFile(c.env, '.studio/backups/' + c.req.param('id') + '.json'),
+    );
+    const record = (await metadata.json()) as { archiveFormat?: string };
+    const suffix = record.archiveFormat === 'tar' ? '.tar.gz' : '.json.gz';
+    const file = await privateFile(c.env, '.studio/backups/' + c.req.param('id') + suffix);
     if (!file) throw new CloudError('Backup not found.', 404);
     const response = await readObject(c.env, file);
     return new Response(response.body, {
       headers: {
         'Content-Type': 'application/gzip',
-        'Content-Disposition':
-          'attachment; filename=glass-notebook-' + c.req.param('id') + '.json.gz',
+        'Content-Disposition': 'attachment; filename=glass-notebook-' + c.req.param('id') + suffix,
+        'Content-Length': String(file.bytes),
         'Cache-Control': 'private, no-store',
       },
     });

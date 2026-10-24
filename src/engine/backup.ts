@@ -1,5 +1,5 @@
 import { projectsSchema } from '../shared/projects.js';
-import { promises as fs } from 'node:fs';
+import { promises as fs, constants } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { randomUUID } from 'node:crypto';
@@ -12,34 +12,26 @@ import { librarySchema } from '../shared/contracts.js';
 import { selectedItemsSchema } from '../shared/operations.js';
 import { commitFiles, fileDigest } from './file-transaction.js';
 import { OperationConflict } from './operations.js';
+import {
+  backupLocations as locations,
+  backupPath as allowedPath,
+  backupTarget as targetFor,
+} from './backup-paths.js';
+import {
+  backupRevision,
+  indexBackupFiles,
+  hashBackupFile,
+  createLargeBackup,
+  extractLargeBackup,
+  legacyBackupFile,
+  type BackupFileIndex,
+} from './backup-archive.js';
+import { LARGE_BACKUP_BYTES } from '../shared/backup-transfer.js';
 
 const compress = promisify(gzip),
   decompress = promisify(gunzip);
 const MAX_ARCHIVE = 128 * 1024 * 1024,
   MAX_EXPANDED = 384 * 1024 * 1024;
-const locations = [
-  { disk: 'content', archive: 'content' },
-  { disk: '.studio/revisions', archive: 'history/revisions' },
-  { disk: '.studio/trash', archive: 'history/trash' },
-  { disk: '.studio/history', archive: 'history/collections' },
-  { disk: '.studio/project-history', archive: 'history/projects' },
-  { disk: '.studio/pages', archive: 'history/pages' },
-  { disk: '.studio/media-originals', archive: 'private/media-originals' },
-] as const;
-const allowedPath = (name: string) =>
-  !name.includes('\0') &&
-  !name.split('/').some((part) => part === '.' || part === '..' || part.startsWith('.')) &&
-  (/^content\/(?:site|library|projects)\.json$/.test(name) ||
-    name === 'content/about.md' ||
-    /^history\/pages\/about\/[a-f0-9]{64}\.json$/.test(name) ||
-    /^private\/media-originals\/[a-f0-9-]{36}\/(?:original|record\.json)$/.test(name) ||
-    /^content\/(?:posts|lab)\/[^/\\]+\.md$/.test(name) ||
-    /^content\/media\/[^/\\]+$/.test(name) ||
-    /^history\/revisions\/[\w-]{1,100}\/[a-f0-9]{64}\.json$/.test(name) ||
-    /^history\/trash\/[\w-]{1,100}\.(?:json|md)$/.test(name) ||
-    /^history\/trash\/photos\/photo-[a-f0-9-]{36}\.json$/.test(name) ||
-    /^history\/collections\/[\w-]+\.json$/.test(name) ||
-    /^history\/projects\/[a-f0-9]{64}\.json$/.test(name));
 const envelopeSchema = z.object({
   format: z.literal('fieldnotes-notebook'),
   version: z.union([z.literal(1), z.literal(2)]),
@@ -70,6 +62,8 @@ export type BackupRecord = {
   sha256?: string;
   revision: string;
   available?: boolean;
+  archiveFormat?: 'tar';
+  unpackedBytes?: number;
 };
 export type RestoreReview = {
   id: string;
@@ -83,6 +77,11 @@ export type RestoreReview = {
   changed: number;
   removed: number;
   sourceRevision: string;
+  archiveFormat?: 'tar' | 'json';
+  archiveBytes?: number;
+  unpackedBytes?: number;
+  archiveSha256?: string;
+  expiresAt?: string;
 };
 type Capture = { envelope: Envelope; revision: string };
 async function walk(base: string, prefix: string): Promise<File[]> {
@@ -118,17 +117,12 @@ const revisionFor = (files: File[]) =>
       .sort()
       .join('\n'),
   );
-const counts = (files: File[]) => ({
+const counts = (files: { path: string }[]) => ({
   files: files.length,
   entries: files.filter((file) => /^content\/(posts|lab)\//.test(file.path)).length,
   media: files.filter((file) => file.path.startsWith('content/media/')).length,
   revisions: files.filter((file) => file.path.startsWith('history/revisions/')).length,
 });
-function targetFor(root: string, name: string) {
-  const location = locations.find((location) => name.startsWith(`${location.archive}/`));
-  if (!location) throw new Error('Invalid backup location');
-  return path.join(root, location.disk, name.slice(location.archive.length + 1));
-}
 async function capture(root: string): Promise<Capture> {
   const files = (
     await Promise.all(
@@ -167,6 +161,10 @@ async function validateAndStage(archive: Uint8Array, root: string) {
       throw new Error(`Backup checksum does not match: ${file.path}`);
     await atomicWrite(targetFor(root, file.path), data);
   }
+  return { envelope, model: await validateStaged(root, envelope.files) };
+}
+async function validateStaged(root: string, files: { path: string }[]) {
+  const paths = new Set(files.map((file) => file.path));
   for (const location of locations)
     await fs.mkdir(path.join(root, location.disk), { recursive: true });
   await fs.mkdir(path.join(root, 'content/posts'), { recursive: true });
@@ -176,7 +174,7 @@ async function validateAndStage(archive: Uint8Array, root: string) {
     model = await staged.read();
   // Loading every historical record verifies its hash and stable entry namespace as well.
   const ids = new Set(
-    envelope.files
+    files
       .filter((file) => file.path.startsWith('history/revisions/'))
       .map((file) => file.path.split('/')[2]),
   );
@@ -184,9 +182,9 @@ async function validateAndStage(archive: Uint8Array, root: string) {
   await staged.aboutRevisions();
   await staged.listPhotoTrash();
   await new MediaService(staged).validate();
-  const receipts = envelope.files.filter((file) => /^history\/trash\/[^/]+\.json$/.test(file.path));
+  const receipts = files.filter((file) => /^history\/trash\/[^/]+\.json$/.test(file.path));
   for (const file of receipts) {
-    const receipt = JSON.parse(Buffer.from(file.data, 'base64').toString('utf8'));
+    const receipt = JSON.parse(await fs.readFile(targetFor(root, file.path), 'utf8'));
     if (
       !/^[\w-]{1,100}$/.test(receipt.id) ||
       !['posts', 'lab'].includes(receipt.kind) ||
@@ -202,21 +200,47 @@ async function validateAndStage(archive: Uint8Array, root: string) {
     );
     if (deleted.id !== receipt.id) throw new Error('A Trash entry does not match its receipt.');
   }
-  for (const file of envelope.files.filter((file) =>
-    file.path.startsWith('history/collections/'),
-  )) {
-    const record = JSON.parse(Buffer.from(file.data, 'base64').toString('utf8'));
+  for (const file of files.filter((file) => file.path.startsWith('history/collections/'))) {
+    const record = JSON.parse(await fs.readFile(targetFor(root, file.path), 'utf8'));
     librarySchema.parse(record.previous);
     if (!/^[a-f0-9]{64}$/.test(record.afterRevision))
       throw new Error('Invalid collection history.');
   }
-  for (const file of envelope.files.filter((file) => file.path.startsWith('history/projects/'))) {
-    const record = JSON.parse(Buffer.from(file.data, 'base64').toString('utf8'));
+  for (const file of files.filter((file) => file.path.startsWith('history/projects/'))) {
+    const record = JSON.parse(await fs.readFile(targetFor(root, file.path), 'utf8'));
     projectsSchema.parse(record.previous);
     if (!/^[a-f0-9]{64}$/.test(record.afterRevision)) throw new Error('Invalid project history.');
   }
-  return { envelope, model };
+  return model;
 }
+async function validateArchiveFile(archive: string, root: string) {
+  let legacy: boolean;
+  try {
+    legacy = await legacyBackupFile(archive);
+  } catch {
+    throw new Error(
+      'This is not a readable notebook backup. Choose a Glass .json.gz or .tar.gz archive.',
+    );
+  }
+  if (legacy) {
+    if ((await fs.stat(archive)).size > MAX_ARCHIVE)
+      throw new Error(
+        'Legacy JSON backups support up to 128 MiB. Create a large .tar.gz backup for bigger notebooks.',
+      );
+    return {
+      ...(await validateAndStage(await fs.readFile(archive), root)),
+      archiveFormat: 'json' as const,
+    };
+  }
+  const envelope = await extractLargeBackup(archive, root);
+  return {
+    envelope,
+    model: await validateStaged(root, envelope.files),
+    archiveFormat: 'tar' as const,
+  };
+}
+export const backupArchiveName = (record: Pick<BackupRecord, 'id' | 'archiveFormat'>) =>
+  record.id + (record.archiveFormat === 'tar' ? '.tar.gz' : '.json.gz');
 export class BackupService {
   private plans = new Map<string, { root: string; review: RestoreReview; createdAt: number }>();
   restoring = false;
@@ -239,6 +263,10 @@ export class BackupService {
   }
   discardReviews() {
     this.plans.clear();
+  }
+  hasReview(id: string) {
+    const plan = this.plans.get(id);
+    return !!plan && Date.now() - plan.createdAt <= 20 * 60 * 1000;
   }
   private async save(captured: Capture, reason: BackupRecord['reason']) {
     const data = await compress(JSON.stringify(captured.envelope));
@@ -267,8 +295,46 @@ export class BackupService {
     ]);
     return (await this.list()).find((item) => item.id === id)!;
   }
-  async create(reason: BackupRecord['reason'] = 'manual') {
-    return this.store.exclusive(async () => this.save(await capture(this.store.root), reason));
+  private async saveLarge(files: BackupFileIndex, reason: BackupRecord['reason']) {
+    const temporary = path.join(this.store.root, '.studio/backup-work');
+    await fs.mkdir(temporary, { recursive: true, mode: 0o700 });
+    const id = `${Date.now()}-${randomUUID().slice(0, 8)}`;
+    const file = path.join(temporary, id + '.tar.gz');
+    try {
+      const manifest = await createLargeBackup(this.store.root, file, files);
+      const site = JSON.parse(
+        await fs.readFile(path.join(this.store.root, 'content/site.json'), 'utf8'),
+      );
+      const record: Omit<BackupRecord, 'revision'> = {
+        id,
+        createdAt: manifest.createdAt,
+        bytes: (await fs.stat(file)).size,
+        ...counts(files),
+        name: site.name,
+        reason,
+        sha256: await hashBackupFile(file),
+        archiveFormat: 'tar',
+        unpackedBytes: files.reduce((sum, file) => sum + file.bytes, 0),
+      };
+      const folder = path.join(this.store.root, '.studio/backups');
+      await commitFiles(this.store.root, [
+        { file: path.join(folder, backupArchiveName(record)), source: file, expected: null },
+        { file: path.join(folder, id + '.json'), value: JSON.stringify(record), expected: null },
+      ]);
+      return (await this.list()).find((item) => item.id === id)!;
+    } finally {
+      await fs.rm(file, { force: true });
+    }
+  }
+  async create(
+    reason: BackupRecord['reason'] = 'manual',
+    format: 'large' | 'legacy' = reason === 'manual' ? 'legacy' : 'large',
+  ) {
+    return this.store.exclusive(async () =>
+      format === 'large'
+        ? this.saveLarge(await indexBackupFiles(this.store.root), reason)
+        : this.save(await capture(this.store.root), reason),
+    );
   }
   async list(): Promise<BackupRecord[]> {
     const folder = path.join(this.store.root, '.studio/backups');
@@ -280,7 +346,7 @@ export class BackupService {
         const record = JSON.parse(raw) as BackupRecord;
         if (record.id + '.json' !== name)
           throw new Error('Backup identity does not match its catalog.');
-        const stat = await fs.stat(path.join(folder, record.id + '.json.gz')).catch((error) => {
+        const stat = await fs.stat(path.join(folder, backupArchiveName(record))).catch((error) => {
           if (error.code === 'ENOENT') return null;
           throw error;
         });
@@ -294,14 +360,18 @@ export class BackupService {
     return records.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
   async download(id: string) {
+    return fs.readFile((await this.downloadFile(id)).file);
+  }
+  async downloadFile(id: string) {
     if (!/^\d+-[a-f0-9-]+$/.test(id)) throw new Error('Invalid backup identity');
-    const bytes = await fs.readFile(path.join(this.store.root, '.studio/backups', `${id}.json.gz`));
     const record = JSON.parse(
       await fs.readFile(path.join(this.store.root, '.studio/backups', `${id}.json`), 'utf8'),
     ) as BackupRecord;
-    if (record.sha256 && digest(bytes) !== record.sha256)
+    if (record.id !== id) throw new Error('Backup identity does not match its catalog.');
+    const file = path.join(this.store.root, '.studio/backups', backupArchiveName(record));
+    if (record.sha256 && (await hashBackupFile(file)) !== record.sha256)
       throw new Error('The saved backup checksum changed.');
-    return bytes;
+    return { file, record };
   }
   async batch(request: unknown) {
     const input = z
@@ -326,7 +396,8 @@ export class BackupService {
       for (const item of input.items) {
         const file = path.join(this.store.root, '.studio/backups', item.id + '.json');
         if (input.action === 'delete') {
-          const archive = path.join(this.store.root, '.studio/backups', item.id + '.json.gz');
+          const record = available.find((record) => record.id === item.id)!;
+          const archive = path.join(this.store.root, '.studio/backups', backupArchiveName(record));
           changes.push(
             { file: archive, value: null, expected: await fileDigest(archive) },
             { file, value: null, expected: await fileDigest(file) },
@@ -346,26 +417,49 @@ export class BackupService {
     });
   }
   async inspect(data: Uint8Array): Promise<RestoreReview> {
+    return this.inspectSource((file) => fs.writeFile(file, data));
+  }
+  async inspectFile(file: string): Promise<RestoreReview> {
+    if ((await fs.stat(file)).size > LARGE_BACKUP_BYTES)
+      throw new Error('Backup exceeds the 4 GiB compressed limit.');
+    return this.inspectSource((target) => fs.copyFile(file, target, constants.COPYFILE_FICLONE));
+  }
+  async inspectSaved(id: string) {
+    return this.inspectFile((await this.downloadFile(id)).file);
+  }
+  private async inspectSource(write: (file: string) => Promise<unknown>): Promise<RestoreReview> {
     const id = randomUUID(),
       root = path.join(this.store.root, '.studio/imports', id);
     try {
-      const { envelope, model } = await validateAndStage(data, root);
-      const current = await this.store.exclusive(() => capture(this.store.root));
+      await fs.mkdir(root, { recursive: true, mode: 0o700 });
+      const source = path.join(root, 'source.json.gz');
+      await write(source);
+      const { envelope, model, archiveFormat } = await validateArchiveFile(source, root);
+      const current = await this.store.exclusive(() => indexBackupFiles(this.store.root));
       const incoming = new Map(envelope.files.map((file) => [file.path, file.sha256])),
-        previous = new Map(current.envelope.files.map((file) => [file.path, file.sha256]));
+        previous = new Map(current.map((file) => [file.path, file.sha256]));
       const review: RestoreReview = {
         id,
         createdAt: envelope.createdAt,
         ...counts(envelope.files),
         name: model.site.name,
-        sourceRevision: current.revision,
+        sourceRevision: backupRevision(current),
+        archiveFormat,
+        archiveBytes: (await fs.stat(source)).size,
+        unpackedBytes: (envelope.files as { data?: string; bytes?: number }[]).reduce(
+          (sum, file) =>
+            sum +
+            (file.data !== undefined ? Buffer.byteLength(file.data, 'base64') : file.bytes || 0),
+          0,
+        ),
+        archiveSha256: await hashBackupFile(source),
+        expiresAt: new Date(Date.now() + 20 * 60 * 1000).toISOString(),
         added: [...incoming].filter(([file]) => !previous.has(file)).length,
         changed: [...incoming].filter(
           ([file, hash]) => previous.has(file) && previous.get(file) !== hash,
         ).length,
         removed: [...previous].filter(([file]) => !incoming.has(file)).length,
       };
-      await atomicWrite(path.join(root, 'source.json.gz'), Buffer.from(data));
       this.plans.set(id, { root, review, createdAt: Date.now() });
       for (const [key, plan] of this.plans)
         if (this.plans.size > 3 || Date.now() - plan.createdAt > 20 * 60 * 1000) {
@@ -386,17 +480,28 @@ export class BackupService {
     this.restoring = true;
     try {
       return await this.store.exclusive(async () => {
-        const current = await capture(this.store.root);
-        if (sourceRevision !== plan.review.sourceRevision || current.revision !== sourceRevision)
+        const current = await indexBackupFiles(this.store.root);
+        if (
+          sourceRevision !== plan.review.sourceRevision ||
+          backupRevision(current) !== sourceRevision
+        )
           throw new ConflictError(
             'The notebook changed after this review. Review the backup again before restoring.',
           );
-        const archive = await fs.readFile(path.join(plan.root, 'source.json.gz'));
+        const archive = path.join(plan.root, 'source.json.gz');
+        if (
+          plan.review.archiveSha256 &&
+          (await hashBackupFile(archive)) !== plan.review.archiveSha256
+        )
+          throw new Error('The reviewed archive changed. Review it again before restoring.');
         // Restage from the checksum-verified archive so edits to a preview directory cannot enter the notebook.
         const staged = path.join(plan.root, 'accepted');
         await fs.rm(staged, { recursive: true, force: true });
-        await validateAndStage(archive, staged);
-        const safety = await this.save(current, 'before-restore');
+        // The accepted copy is re-extracted from the original archive. Release the old preview first.
+        for (const location of locations)
+          await fs.rm(path.join(plan.root, location.disk), { recursive: true, force: true });
+        await validateArchiveFile(archive, staged);
+        const safety = await this.saveLarge(current, 'before-restore');
         const rollback = path.join(plan.root, 'rollback');
         await fs.mkdir(rollback, { recursive: true });
         const moved: { target: string; old: string; hadOld: boolean; installed: boolean }[] = [];

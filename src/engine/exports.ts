@@ -5,7 +5,7 @@ import { pipeline } from 'node:stream/promises';
 import { createGzip } from 'node:zlib';
 import { randomUUID } from 'node:crypto';
 import { Store, digest } from './store.js';
-import { BackupService } from './backup.js';
+import { BackupService, backupArchiveName } from './backup.js';
 import { selectedItemsSchema } from '../shared/operations.js';
 import { OperationConflict } from './operations.js';
 import { MediaService } from './media.js';
@@ -95,6 +95,15 @@ export class Exports {
           message: item.id + ' changed. Refresh the selection before exporting.',
         }));
       if (issues.length) throw new OperationConflict(issues);
+      if (
+        kind === 'backups' &&
+        selected.reduce(
+          (sum, item) => sum + (backups.find((backup) => backup.id === item.id)?.bytes || 0),
+          0,
+        ) >
+          512 * 1024 ** 2
+      )
+        throw new Error('Combined downloads support 512 MiB. Download large backups individually.');
       const files = async function* (service: Exports) {
         let total = 0;
         for (const item of selected) {
@@ -114,7 +123,8 @@ export class Exports {
           yield {
             name:
               kind === 'backups'
-                ? 'backups/glass-' + item.id + '.json.gz'
+                ? 'backups/glass-' +
+                  backupArchiveName(backups.find((backup) => backup.id === item.id)!)
                 : kind === 'media'
                   ? 'media/' + asset!.name
                   : entry!.kind + '/' + entry!.file,

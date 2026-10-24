@@ -2,7 +2,13 @@ import { themeVariables } from './theme.js';
 export { themeVariables } from './theme.js';
 import type { ReactNode } from 'react';
 import {
-  Cloud, GitBranch, FolderUp, KeyRound, Activity, ShieldCheck,
+  Cloud,
+  GitBranch,
+  FolderUp,
+  KeyRound,
+  Activity,
+  ShieldCheck,
+  Pause,
   Share2,
   Ellipsis,
   ScanLine,
@@ -126,7 +132,13 @@ function GithubMark({ size = 18, className = '', ...props }: LucideProps) {
   );
 }
 const icons = {
-  Cloud, GitBranch, FolderUp, KeyRound, Activity, ShieldCheck,
+  Cloud,
+  GitBranch,
+  FolderUp,
+  KeyRound,
+  Activity,
+  ShieldCheck,
+  Pause,
   Share2,
   Ellipsis,
   ScanLine,

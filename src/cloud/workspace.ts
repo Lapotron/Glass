@@ -5,6 +5,7 @@ import {
   type CloudEnv,
   type FileRecord,
   type WorkspaceManifest,
+  type Statement,
 } from './types.js';
 const encoder = new TextEncoder();
 const workingPaths = [
@@ -328,6 +329,8 @@ export async function commitStaged(
   version: number,
   actor: string,
   replace = false,
+  completion: Statement[] = [],
+  retained: FileRecord[] = [],
 ) {
   const totals = await env.DB.prepare(
     'SELECT (SELECT COALESCE(SUM(bytes),0) FROM cloud_files) AS current, (SELECT COALESCE(SUM(bytes),0) FROM cloud_patches WHERE id=?) AS staged,(SELECT COALESCE(SUM(bytes),0) FROM cloud_files WHERE path IN (SELECT path FROM cloud_patches WHERE id=?)) AS replaced',
@@ -336,7 +339,9 @@ export async function commitStaged(
     .first<{ current: number; staged: number; replaced: number }>();
   if (!totals) throw new CloudError('Staged import could not be read.');
   if (
-    (replace ? totals.staged : totals.current - totals.replaced + totals.staged) >
+    (replace
+      ? totals.staged + retained.reduce((sum, file) => sum + file.bytes, 0)
+      : totals.current - totals.replaced + totals.staged) >
     Number(env.STORAGE_BUDGET_BYTES || 5 * 1024 ** 3)
   )
     throw new CloudError('Workspace storage budget reached.', 413);
@@ -347,7 +352,9 @@ export async function commitStaged(
       new Date().toISOString(),
     ),
     replace
-      ? env.DB.prepare('DELETE FROM cloud_files')
+      ? env.DB.prepare(
+          'DELETE FROM cloud_files WHERE path NOT IN (SELECT value FROM json_each(?))',
+        ).bind(JSON.stringify(retained.map((file) => file.path)))
       : env.DB.prepare(
           'DELETE FROM cloud_files WHERE path IN (SELECT path FROM cloud_patches WHERE id=?)',
         ).bind(id),
@@ -355,6 +362,7 @@ export async function commitStaged(
       'INSERT INTO cloud_files SELECT path,sha,bytes,modified,text,encrypted FROM cloud_patches WHERE id=? AND sha IS NOT NULL',
     ).bind(id),
     env.DB.prepare('UPDATE cloud_workspace SET version=version+1 WHERE id=1'),
+    ...completion,
   ];
   try {
     await env.DB.batch(statements);

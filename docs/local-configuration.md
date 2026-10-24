@@ -40,13 +40,17 @@ Connections includes a read-only check for Workers, D1, Access organization and 
 
 For the selected ACA and private staging rollout, scope account permissions to the intended account and zone permissions to `example.com`:
 
-| Scope | Permission |
-| --- | --- |
-| Account | D1 Edit; Workers Scripts Edit |
-| Account | Access: Apps and Policies Edit |
+| Scope   | Permission                                                 |
+| ------- | ---------------------------------------------------------- |
+| Account | D1 Edit; Workers Scripts Edit                              |
+| Account | Access: Apps and Policies Edit                             |
 | Account | Access: Organizations, Identity Providers, and Groups Edit |
-| Zone | Zone Read; DNS Edit; Workers Routes Edit |
+| Zone    | Zone Read; DNS Edit; Workers Routes Edit                   |
 
 Cloudflare also labels equivalent permissions **Write** in its newer interfaces. Keep the existing Pages permission and R2 object credentials. The [official permission reference](https://developers.cloudflare.com/fundamentals/api/reference/permissions/) distinguishes account scopes from zone scopes; a dashboard session or successful Pages upload does not confer these additional token permissions.
 
 ACA deployment and root `dynamic:deploy` use saved Studio credentials. Staging's non-secret Access identifiers follow [the private configuration](dynamic-prototype.md#prepared-private-staging-rollout). A checked account and an uploaded application are separate states; report actual HTTPS verification independently.
+
+## Hosted connection defaults
+
+Hosted Studio deployments reuse build-supplied connection credentials as encrypted Worker secrets. Status reports their source as `environment`; the UI labels this **Provided by the Cloudflare deployment**. Explicit encrypted notebook credentials retain priority; removal reveals the deployed default. The browser still receives presence/source metadata only. The deploy helper never copies Access client secrets into runtime bindings or rotates `STUDIO_SECRET`. See [hosted deployment](hosted-studio.md#6-complete-the-build-credentials) for supported build secrets, scopes, bootstrap and preview isolation.

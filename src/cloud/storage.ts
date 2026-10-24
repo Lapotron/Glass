@@ -8,6 +8,17 @@ export async function putObject(
 ) {
   const bytes =
     typeof value === 'string' ? new TextEncoder().encode(value).byteLength : value.byteLength;
+  await reserveObject(env, key, bytes);
+  // Failed uploads keep their reservation. Conservatism is preferable to silently exceeding a budget.
+  await env.BUCKET.put(key, value);
+}
+export async function reserveObject(
+  env: Pick<CloudEnv, 'DB' | 'BUCKET' | 'STORAGE_BUDGET_BYTES'>,
+  key: string,
+  bytes: number,
+) {
+  if (!Number.isSafeInteger(bytes) || bytes < 0)
+    throw new CloudError('Invalid private object size.');
   const budget = Number(env.STORAGE_BUDGET_BYTES || 5 * 1024 ** 3);
   if (!Number.isSafeInteger(budget) || budget <= 0 || budget > 8 * 1024 ** 3)
     throw new CloudError('Set a private storage budget between 1 byte and 8 GiB.', 503);
@@ -32,6 +43,16 @@ export async function putObject(
         );
       throw error;
     }
-  // Failed uploads keep their reservation. Conservatism is preferable to silently exceeding a budget.
-  await env.BUCKET.put(key, value);
+}
+/** Release only an exact, application-owned temporary key after its physical deletion succeeds. */
+export async function discardTransferObject(env: Pick<CloudEnv, 'DB' | 'BUCKET'>, key: string) {
+  if (!/^transfers\/[a-f0-9-]{36}\/data$/.test(key))
+    throw new CloudError('Invalid temporary transfer object.');
+  await env.BUCKET.delete(key);
+  await env.DB.batch([
+    env.DB.prepare(
+      'UPDATE cloud_storage SET bytes=bytes-COALESCE((SELECT bytes FROM cloud_objects WHERE key=?),0) WHERE id=1',
+    ).bind(key),
+    env.DB.prepare('DELETE FROM cloud_objects WHERE key=?').bind(key),
+  ]);
 }

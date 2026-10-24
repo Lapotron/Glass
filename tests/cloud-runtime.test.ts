@@ -19,6 +19,7 @@ beforeAll(async () => {
     `import {createCloudApp} from './src/cloud/worker.ts';
     const app=createCloudApp({authenticate:async(request)=>({id:request.headers.has('X-Fixture-Read-Only')?'unseen-owner':'fixture-owner',email:'owner@fixture.test'})});
     export default {fetch:(request,env)=>{
+      if(request.headers.has('X-Fixture-Runtime-Token'))env={...env,CLOUDFLARE_API_TOKEN:'fixture-runtime-token'};
       if(request.headers.has('X-Fixture-Read-Only')){
         const database=env.DB;
         env={...env,DB:{prepare(sql){if(!/^SELECT\\b/i.test(sql.trim()))throw new Error('Fixture disallows database writes.');return database.prepare(sql)},batch(){throw new Error('Fixture disallows database writes.')},exec(){throw new Error('Fixture disallows database writes.')}}};
@@ -70,6 +71,37 @@ afterAll(async () => {
 async function get(route: string) {
   return runtime.dispatchFetch(origin + route);
 }
+it('reads saved media protection status without queueing a build or writing D1', async () => {
+  await get('/api/bootstrap');
+  const db = await runtime.getD1Database('DB');
+  const before = await db.prepare('SELECT COUNT(*) AS count FROM cloud_jobs').first('count');
+  const result = await runtime.dispatchFetch(origin + '/api/cloud-media/protection', {
+    headers: { 'X-Fixture-Read-Only': 'true' },
+  });
+  expect(result.status).toBe(200);
+  expect(await result.json()).toEqual({ appliedAt: '', current: false, rules: [] });
+  expect(await db.prepare('SELECT COUNT(*) AS count FROM cloud_jobs').first('count')).toBe(before);
+});
+it('uses deployed runtime credentials without a saved notebook file and exposes only their source to the owner', async () => {
+  const summary = await runtime.dispatchFetch(origin + '/api/connections', {
+    headers: { 'X-Fixture-Runtime-Token': 'true' },
+  });
+  const text = await summary.text();
+  expect(text).not.toContain('fixture-runtime-token');
+  expect(JSON.parse(text).fields.cloudflareApiToken).toEqual({
+    configured: true,
+    source: 'environment',
+  });
+  const denied = await runtime.dispatchFetch(origin + '/__ci/deployment-credentials', {
+    headers: { 'X-Fixture-Runtime-Token': 'true' },
+  });
+  expect(denied.status).toBe(401);
+  const result = await runtime.dispatchFetch(origin + '/__ci/deployment-credentials', {
+    headers: { 'X-Fixture-Runtime-Token': 'true', Authorization: 'Bearer ' + 'test-ci-'.repeat(6) },
+  });
+  expect(result.status).toBe(200);
+  expect(await result.json()).toEqual({ CLOUDFLARE_API_TOKEN: 'fixture-runtime-token' });
+});
 it('permits the Access top-level return while rejecting cross-site API reads and writes', () => {
   const env = { STUDIO_ORIGIN: origin } as CloudEnv;
   const navigation = {
@@ -331,4 +363,51 @@ it('cancels only an unclaimed queued request and reports all retained manifest f
   expect(((await (await get('/api/cloud/status')).json()) as { files: number }).files).toBe(
     expected,
   );
+});
+it('imports checked files atomically, preserves omitted credentials and keeps the previous manifest privately', async () => {
+  const previous = (await (await get('/api/bootstrap')).json()) as any;
+  const summary = (await (await get('/api/connections')).json()) as any;
+  expect(
+    (
+      await write(
+        '/api/connections',
+        { revision: summary.revision, set: { cloudflareApiToken: 'fixture-explicit-override' } },
+        'PUT',
+      )
+    ).status,
+  ).toBe(200);
+  const status = (await (await get('/api/cloud/status')).json()) as any;
+  const session = (await (
+    await write('/api/cloud/migration', { version: status.version })
+  ).json()) as { id: string };
+  const manifest = [];
+  for (const [path, value] of [
+    ['content/site.json', JSON.stringify(previous.site)],
+    ['content/library.json', JSON.stringify(previous.library)],
+    ['content/about.md', '# Imported notebook\n\nExact migration bytes.\n'],
+  ]) {
+    const result = await runtime.dispatchFetch(
+      origin + '/api/cloud/migration/' + session.id + '/file?' + new URLSearchParams({ path }),
+      { method: 'PUT', headers: { Origin: origin, 'X-Studio-Token': previous.token }, body: value },
+    );
+    expect(result.status, await result.clone().text()).toBe(200);
+    manifest.push(await result.json());
+  }
+  const committed = await write('/api/cloud/migration/' + session.id + '/commit', {
+    files: manifest,
+  });
+  expect(committed.status, await committed.clone().text()).toBe(200);
+  expect(((await committed.json()) as any).retainedPrivateFiles).toBe(1);
+  const connection = await (await get('/api/connections')).text();
+  expect(JSON.parse(connection).fields.cloudflareApiToken.source).toBe('studio');
+  expect(connection).not.toContain('fixture-explicit-override');
+  const state = (await (await get('/api/cloud/migration/' + session.id)).json()) as any;
+  expect(state.state).toBe('completed');
+  const bucket = (await runtime.getR2Bucket('BUCKET')) as unknown as CloudEnv['BUCKET'];
+  const recovery = await bucket.get('migrations/' + session.id + '/before.json');
+  expect(JSON.parse(await recovery!.text()).version).toBe(status.version);
+  const current = (await (await get('/api/bootstrap')).json()) as any;
+  expect(current.about.body).toContain('Exact migration bytes.');
+  const stale = await write('/api/cloud/migration', { version: status.version });
+  expect(stale.status).toBe(409);
 });

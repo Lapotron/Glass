@@ -2,7 +2,9 @@ import { promises as fs, createReadStream, constants } from 'node:fs';
 import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 
-export type FileChange = { file: string; value: string | Buffer | null; expected?: string | null };
+export type FileChange = { file: string; expected?: string | null } & (
+  { value: string | Buffer | null; source?: never } | { source: string; value?: never }
+);
 type Step = { file: string; before: string | null; after: string | null };
 type Journal = { version: 1 | 2; state: 'prepared' | 'applying' | 'committed'; steps: Step[] };
 const hash = (bytes: string | Buffer) => createHash('sha256').update(bytes).digest('hex');
@@ -164,12 +166,23 @@ async function commitChanges(
         throw new Error('A selected file changed before the operation. Refresh the selection.');
       if (before !== null)
         await fs.copyFile(target, path.join(folder, 'before-' + index), constants.COPYFILE_FICLONE);
-      if (change.value !== null)
-        await fs.writeFile(path.join(folder, 'after-' + index), change.value);
+      const afterFile = path.join(folder, 'after-' + index);
+      let after: string | null;
+      if (change.source !== undefined) {
+        const original = await fileDigest(change.source);
+        if (original === null) throw new Error('The staged source file is missing.');
+        await fs.copyFile(change.source, afterFile, constants.COPYFILE_FICLONE);
+        after = await fileDigest(afterFile);
+        if (after !== original || (await fileDigest(change.source)) !== original)
+          throw new Error('The staged source file changed during the operation.');
+      } else {
+        if (change.value !== null) await fs.writeFile(afterFile, change.value);
+        after = change.value === null ? null : hash(change.value);
+      }
       journal.steps.push({
         file: relative,
         before,
-        after: change.value === null ? null : hash(change.value),
+        after,
       });
     }
     await journalWrite(folder, journal);
