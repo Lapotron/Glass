@@ -1,10 +1,56 @@
 # Glass
 
-A personal blog with an Apple-inspired Liquid Glass interface, a private Markdown Studio and a custom static publishing engine. Write locally or host Studio on Cloudflare; readers receive complete static pages with small, on-demand enhancements.
+**A personal publishing space, built around Markdown.**
 
-![Original landscape illustration included with the starter](content/media/coast-dawn.svg)
+Glass brings a Liquid Glass interface, a capable writing studio and a custom static engine into one blog. Write locally or in a private Cloudflare-hosted Studio. Publish complete HTML pages with readable typography, build-time mathematics and diagrams, and interactions that load when readers need them.
 
-## Start locally
+[Showcase](#showcase) · [Run locally](#run-locally) · [Host on Cloudflare](#host-on-cloudflare) · [Documentation](#documentation)
+
+## Showcase
+
+These screenshots use the generic Glass demo and its sample content. The Studio images come from a local demo workspace.
+
+### A homepage with room to breathe
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/showcase/home-dark.webp">
+  <img src="docs/images/showcase/home-light.webp" alt="Glass demo homepage with a short profile, pinned writing and recent posts on a translucent reading surface" width="1440">
+</picture>
+
+Introduce yourself, choose the writing to pin, and let recent posts fill the rest. Projects, the archive, albums and About have their own destinations. A visual-chapter homepage is also available.
+
+### A reading surface for words, code and ideas
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/showcase/reading-dark.webp">
+  <img src="docs/images/showcase/reading-light.webp" alt="Glass demo article with a floating outline, mathematical notation and a continuous glass reading surface" width="1440">
+</picture>
+
+Keep the article in one continuous flow. Floating navigation, footnotes, annotations, focus mode and reader preferences support longer reading; image viewing and interactive components add detail where it helps.
+
+### A studio that stays close to the source
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/showcase/studio-dark.webp">
+  <img src="docs/images/showcase/studio-light.webp" alt="Glass demo Studio in split mode, with editable Markdown, source assistance and the rendered article preview" width="1440">
+</picture>
+
+Edit ordinary Markdown with CodeMirror completion, syntax highlighting, linting, previews, search, an outline and a minimap. Compare revisions, manage media and publish from the same workspace.
+
+## What you can make
+
+| Area               | Included                                                                                                                          |
+| :----------------- | :-------------------------------------------------------------------------------------------------------------------------------- |
+| Essays and notes   | Headings, task lists, footnotes, highlights, callouts, disclosures, tabs, citations and booktabs-style tables.                    |
+| Technical writing  | MathJax 4, optional STEM notation packages, Expressive Code, pseudocode, Mermaid diagrams, mindmaps, plots and charts.            |
+| A personal website | Curated homepages, a chronological archive, project cards, photo albums, About and configurable collection names and paths.       |
+| Reader tools       | Pagefind full-text search, light/dark appearance, reading controls, saved reading, an image viewer, sharing and print styles.     |
+| Daily authoring    | Image preparation, media usage checks, batch operations, Trash, revisions, portable backups, short links and optional scheduling. |
+| Optional services  | Giscus conversations and annotations, R2 media delivery, Cloudflare/Google analytics and the independent private ACA dashboard.   |
+
+The interface supports English, Simplified Chinese and Traditional Chinese. External writing tools can use the versioned authoring pack and draft-scoped MCP interfaces.
+
+## Run locally
 
 Requires **Node.js 22.17 or newer** and npm.
 
@@ -16,42 +62,39 @@ npm run renderers:install
 npm run dev
 ```
 
-Open the [blog](http://127.0.0.1:4310/) or [Studio](http://127.0.0.1:4310/studio/). The starter includes generic sample articles, interactive experiments and original illustrations. Edit **About**, **Homepage** and **Appearance** to make it yours. Your source stays in `content/`; you can also edit it with ordinary text tools.
+Open the [blog](http://127.0.0.1:4310/) or [Studio](http://127.0.0.1:4310/studio/). Start with **About**, **Homepage** and **Appearance**, then replace the sample writing and illustrations. Your Markdown, JSON settings and media live in `content/`.
 
-## Deploy from the Cloudflare dashboard
-
-The [dashboard deployment guide](docs/hosted-studio.md#dashboard-only-deployment) covers GitHub-connected Workers Builds, custom domains, private D1/R2 storage and Cloudflare Access. Use your own repository and configure separate Studio and reader Workers. Hosted Studio opens at the root of its private hostname and needs no local server.
-
-Worker names, bucket/database names, domains and branches are customizable. All example domains and identifiers are placeholders. Integrations and automatic publishing start disabled. Keep the Studio encryption key and existing cloud resources when updating an installation. Git pushes update application code; public notebook publication remains an explicit Studio operation.
-
-Local Studio also supports [Cloudflare Pages Direct Upload](docs/publishing.md):
+Build a standalone reader artifact with:
 
 ```sh
 npm run build
 npm run preview
 ```
 
-Only published content enters `dist/`. Private Studio code, credentials, drafts, revision history and backups do not belong in the public reader artifact.
+Public output goes to `dist/`. Only published content enters the site, feeds and search. Article mathematics, diagrams and syntax highlighting are compiled before publication; reader JavaScript enhances the finished pages.
 
-## Included
+## Host on Cloudflare
 
-- Responsive homepage, archive, Projects, albums, About, reader settings and full-text Pagefind search.
-- CodeMirror Markdown editing with completion, formatting, diagnostics, previews, revisions and comparisons.
-- Build-time MathJax, Mermaid, Expressive Code, pseudocode, tables, tabs, mindmaps, charts and image comparisons.
-- Media uploads, crop/resize, downloads, EXIF display, usage checks, aliases and optional R2 delivery.
-- Giscus discussions and line annotations with matched light/dark themes.
-- Portable backups, Trash, batch operations, collection conversion and optional scheduling.
-- Optional private ACA analytics with an independent Worker/D1 service; disabled until configured.
-- English, Simplified Chinese and Traditional Chinese interfaces.
+The [dashboard deployment guide](docs/hosted-studio.md#dashboard-only-deployment) walks through GitHub-connected Workers Builds, custom domains, Cloudflare Access and private D1/R2 storage. Hosted authoring needs a browser and does not require a local server.
+
+- **Studio Worker:** the private editor, authoring APIs and job coordinator, protected by Access.
+- **D1 and private R2:** the notebook manifest, content bytes, history and recovery data.
+- **Reader Worker:** the generated public website, served separately from the authoring application.
+- **Workers Builds:** compilation and other heavy work from captured notebook snapshots.
+
+Names, domains, bindings and the production branch are configurable. Git pushes update application code; Studio publication approves the notebook release. Follow the guide's setup order and preserve the encryption key when updating an existing installation.
+
+Local Studio also retains [Cloudflare Pages Direct Upload](docs/publishing.md). Optional ACA and the [isolated Vinext prototype](docs/dynamic-prototype.md) have their own infrastructure; Vinext is an evaluation app.
 
 ## Documentation
 
-- [Markdown reference](docs/markdown-reference.md), [math](docs/math-authoring.md), [pseudocode](docs/pseudocode.md) and [diagrams](docs/diagrams.md).
-- [Editor workspace](docs/editor-workspace.md), [Studio operations](docs/studio-operations.md) and [recovery](docs/recovery.md).
-- [Authoring pack and MCP](docs/mcp-authoring.md) for supported external writing/conversion workflows. The application generates these product guides without any development-agent files.
-- [Hosted Studio](docs/hosted-studio.md), [site settings](docs/site-settings.md), [media](docs/media.md) and [ACA](docs/aca.md).
-- [Project contracts](docs/contracts.md), [design system](docs/design-system.md) and [production performance](docs/production-performance.md).
-- [Isolated Vinext prototype](docs/dynamic-prototype.md), an optional evaluation app rather than the production reader.
+| Start here        | Read more                                                                                                                                    |
+| :---------------- | :------------------------------------------------------------------------------------------------------------------------------------------- |
+| Writing           | [Markdown reference](docs/markdown-reference.md) · [Editor workspace](docs/editor-workspace.md) · [Authoring and MCP](docs/mcp-authoring.md) |
+| Technical content | [Math](docs/math-authoring.md) · [Pseudocode](docs/pseudocode.md) · [Diagrams](docs/diagrams.md) · [Charts](docs/charts.md)                  |
+| Site management   | [Settings](docs/site-settings.md) · [Media](docs/media.md) · [Studio operations](docs/studio-operations.md) · [Recovery](docs/recovery.md)   |
+| Hosting           | [Hosted Studio](docs/hosted-studio.md) · [Pages publishing](docs/publishing.md) · [ACA](docs/aca.md)                                         |
+| Development       | [Contracts](docs/contracts.md) · [Design system](docs/design-system.md) · [Production performance](docs/production-performance.md)           |
 
 ## Development checks
 
@@ -61,13 +104,14 @@ npm run lint
 npm test
 npm run build
 npm run build:console
+npm run skills:check
 npm run test:browser
 ```
 
-Browser tests use temporary starter workspaces and do not alter your notebook. Install their engines once with `npx playwright install chromium webkit`. Hosted runtime checks use `npx playwright test --config playwright.cloud.config.ts`. Dependencies and generated/private state are excluded from Git.
+Browser tests use temporary notebooks. Install Chromium and WebKit once with `npx playwright install chromium webkit`. Hosted checks use `npx playwright test --config playwright.cloud.config.ts`. The optional Vinext app has its own installation and security suite, described in its guide.
 
-Glass uses the retained `fieldnotes-markdown/1` dialect and portable notebook formats for compatibility. This repository contains a reusable starter, not another author's live notebook or private connection settings.
+Glass retains the `fieldnotes-markdown/1` dialect and portable notebook formats for compatibility. Generated output, local history, credentials and dependencies stay outside version control.
 
 ## License
 
-[MIT](LICENSE), copyright Lapotron. See [third-party notices](NOTICE.md) for included asset provenance and dependency licenses.
+[MIT](LICENSE), copyright Lapotron. Dependencies and included geographic imagery retain their own terms; see [third-party notices](NOTICE.md).
