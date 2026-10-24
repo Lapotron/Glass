@@ -77,6 +77,8 @@ Public output goes to `dist/`. Only published content enters the site, feeds and
 
 The [dashboard deployment guide](docs/hosted-studio.md#dashboard-only-deployment) walks through GitHub-connected Workers Builds, custom domains, Cloudflare Access and private D1/R2 storage. Hosted authoring needs a browser and does not require a local server.
 
+For a new installation or a deliberate reset, follow the [fresh Cloudflare deployment checklist](docs/hosted-studio-clean-install.md).
+
 - **Studio Worker:** the private editor, authoring APIs and job coordinator, protected by Access.
 - **D1 and private R2:** the notebook manifest, content bytes, history and recovery data.
 - **Cloudflare Pages:** the public static website, generated only when you choose Publish.

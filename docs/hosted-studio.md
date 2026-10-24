@@ -2,6 +2,8 @@
 
 Glass uses a private authoring platform and a generated public site. You do not need a local server for hosted authoring.
 
+Starting over or deploying for the first time? Use the [fresh Cloudflare installation checklist](hosted-studio-clean-install.md), including backup-before-deletion, dashboard fields, credential placement and final verification.
+
 ## Architecture
 
 ```mermaid

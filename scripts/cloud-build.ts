@@ -46,6 +46,7 @@ if (mode === 'studio') {
     'latex-conversion',
     'markdown-ide',
     'hosted-studio',
+    'hosted-studio-clean-install',
   ])
     await fs.copyFile(
       'docs/' + name + '.md',
