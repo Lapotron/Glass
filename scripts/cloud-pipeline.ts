@@ -24,6 +24,12 @@ if (phase === 'build') {
       (process.env.GLASS_CI_TOKEN ? 'configured' : 'missing') +
       '; bootstrap ' +
       (process.env.GLASS_PIPELINE_BOOTSTRAP === 'true' ? 'enabled' : 'disabled') +
+      '; Access service token ' +
+      (process.env.CF_ACCESS_CLIENT_ID && process.env.CF_ACCESS_CLIENT_SECRET
+        ? 'configured'
+        : process.env.CF_ACCESS_CLIENT_ID || process.env.CF_ACCESS_CLIENT_SECRET
+          ? 'incomplete'
+          : 'missing') +
       '.',
   );
   if (!preview && !process.env.GLASS_CI_TOKEN)
