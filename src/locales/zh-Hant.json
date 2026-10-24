@@ -3052,7 +3052,7 @@
   "{value0} changed {value1}": "{value0} 已更改 {value1}",
   "{value0} characters · {value1} lines": "{value0} 個字符 · {value1} 行",
   "{value0} column {value1}": "{value0} 列 {value1}",
-  "{value0} entries": "{value0}篇內容",
+  "{value0} entries": "{value0} 篇文章",
   "{value0} feed": "{value0} 訂閱源",
   "{value0} focal point · {value1}%": "{value0} 焦點 · {value1}%",
   "{value0} home": "{value0} 首頁",
@@ -3230,5 +3230,15 @@
   "These files are referenced by current content, including drafts and settings.": "這些檔案被目前內容引用，包括草稿和設定。",
   "Analytics is disabled. Enable ACA in Site settings.": "分析已停用，請在網站設定中啟用 ACA。",
   "Analytics is disabled": "分析已停用",
-  "Enable ACA in Site settings → Advanced analytics to view reports.": "請在網站設定 → 進階分析中啟用 ACA，以檢視報表。"
+  "Enable ACA in Site settings → Advanced analytics to view reports.": "請在網站設定 → 進階分析中啟用 ACA，以檢視報表。",
+  "Archive pages": "封存分頁",
+  "Continued": "接上頁",
+  "Could not filter the archive. Your current page is still available.": "無法篩選封存。你仍可瀏覽目前頁面。",
+  "Loading archive…": "正在載入封存…",
+  "Published entries will appear in the archive.": "已發佈的文章將在封存中顯示。",
+  "Search topics": "搜尋主題",
+  "Use the page numbers and years to browse every published entry.": "使用頁碼和年份瀏覽所有已發佈的文章。",
+  "{value0} entry": "{value0} 篇文章",
+  "{value0} published entry": "{value0} 篇已發佈文章",
+  "{value0} published entries": "{value0} 篇已發佈文章"
 }

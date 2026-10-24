@@ -1,3 +1,4 @@
+import type { ArchiveCatalog } from '../shared/archive.js';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import type { BuildResult, SiteConfig } from '../shared/contracts.js';
@@ -71,7 +72,7 @@ export function resolveMediaHtml(html: string, resolve: (url: string) => string)
       (_all, quote: string, url: string) => 'url(' + quote + resolve(url) + quote + ')',
     );
   let output = html.replace(
-    /\b(src|srcset|imagesrcset|href|poster|style|data-view-image|data-photo|data-config)=(["'])([\s\S]*?)\2/gi,
+    /\b(src|srcset|imagesrcset|href|poster|style|data-view-image|data-photo|data-config|data-archive-catalog)=(["'])([\s\S]*?)\2/gi,
     (all, name: string, quote: string, encoded: string) => {
       const value = encoded
         .replace(/&quot;/g, '"')
@@ -140,6 +141,7 @@ export async function prepareMediaDelivery(
   await fs.rm(outputDir, { recursive: true, force: true });
   await fs.cp(build.outputDir, outputDir, { recursive: true });
   const assets: DeliveryAsset[] = [];
+  const manifest = [...build.manifest];
   for (const file of build.manifest) {
     if (!file.startsWith('media/') || !types[path.extname(file).toLowerCase()]) continue;
     const bytes = await fs.readFile(path.join(outputDir, file)),
@@ -175,9 +177,34 @@ export async function prepareMediaDelivery(
       })
       .join('\n'),
   );
+  const catalogPaths = new Map<string, string>();
+  for (const file of build.manifest.filter((file) =>
+    /^assets\/archive\/catalog-[a-f0-9]+\.json$/.test(file),
+  )) {
+    const target = path.join(outputDir, file);
+    const catalog = JSON.parse(await fs.readFile(target, 'utf8')) as ArchiveCatalog;
+    const data = JSON.stringify({
+      ...catalog,
+      records: catalog.records.map((record) => ({
+        ...record,
+        ...(record.cover ? { cover: resolve(record.cover) } : {}),
+      })),
+    });
+    const next = `assets/archive/catalog-${digest(data).slice(0, 20)}.json`;
+    await fs.writeFile(path.join(outputDir, next), data);
+    if (next !== file) await fs.rm(target);
+    manifest[manifest.indexOf(file)] = next;
+    catalogPaths.set('/' + file, '/' + next);
+  }
   for (const file of build.manifest.filter((file) => file.endsWith('.html'))) {
     const target = path.join(outputDir, file);
-    await fs.writeFile(target, resolveMediaHtml(await fs.readFile(target, 'utf8'), resolve));
+    await fs.writeFile(
+      target,
+      resolveMediaHtml(
+        await fs.readFile(target, 'utf8'),
+        (url) => catalogPaths.get(url) || resolve(url),
+      ),
+    );
   }
   const metadataFile = path.join(outputDir, 'assets/media-details.json');
   const metadata = JSON.parse(await fs.readFile(metadataFile, 'utf8')) as MediaDetailsManifest;
@@ -196,6 +223,12 @@ export async function prepareMediaDelivery(
     JSON.stringify({ version: 1, assets } satisfies DeliveryManifest, null, 2),
   );
   let totalBytes = 0;
-  for (const file of build.manifest) totalBytes += (await fs.stat(path.join(outputDir, file))).size;
-  return { ...build, outputDir, totalBytes, media: { version: 1, assets } };
+  for (const file of manifest) totalBytes += (await fs.stat(path.join(outputDir, file))).size;
+  return {
+    ...build,
+    manifest: manifest.sort(),
+    outputDir,
+    totalBytes,
+    media: { version: 1, assets },
+  };
 }

@@ -207,12 +207,27 @@ export function startAca(config: AcaSettings) {
     },
     { threshold: [0.5] },
   );
-  const scan = () =>
-    document
-      .querySelectorAll<HTMLElement>('[data-aca-item]')
-      .forEach((node) => observer.observe(node));
+  const observed = new Set<HTMLElement>();
+  const scan = () => {
+    if (stopped) return;
+    for (const node of observed)
+      if (!node.isConnected) {
+        observed.delete(node);
+        visible.delete(node);
+        clearTimeout(timers.get(node));
+        timers.delete(node);
+        observer.unobserve(node);
+      }
+    document.querySelectorAll<HTMLElement>('[data-aca-item]').forEach((node) => {
+      if (!observed.has(node)) {
+        observed.add(node);
+        observer.observe(node);
+      }
+    });
+  };
   scan();
   addEventListener('fieldnotes:search-results', scan);
+  addEventListener('fieldnotes:archive-updated', scan);
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) {
       timers.forEach(clearTimeout);

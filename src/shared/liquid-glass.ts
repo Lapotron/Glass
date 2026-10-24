@@ -233,7 +233,7 @@ export function startLiquidGlass() {
     if (host.hasAttribute('data-liquid') || host.matches('.media-viewer')) return;
     // WebKit needs host blur for top-layer surfaces; pseudo-element blur lets prose bleed through.
     const topLayer = host.matches('dialog,[popover]');
-    const nested = topLayer ? null : host.parentElement?.closest('[data-liquid="optic"]');
+    const nested = topLayer || host.hasAttribute('data-liquid-floating') ? null : host.parentElement?.closest('[data-liquid="optic"]');
     const optical = host.matches(optics) && !nested && !(topLayer && !refractive);
     host.dataset.liquid = nested ? 'inset' : optical ? 'optic' : 'surface';
     if (!optical) return;

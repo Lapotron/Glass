@@ -10,6 +10,7 @@ export type ReaderAssets = {
   toolsScript?: string;
   toolsStyle?: string;
   search?: string;
+  archiveWorker?: string;
   chartModules?: import('./chart-modules.js').ChartModules;
 };
 /** Allows local previews to open an artifact produced before asset fingerprinting. */

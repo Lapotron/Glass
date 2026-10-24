@@ -1,3 +1,12 @@
+import { archiveTimelineHtml } from './archive-html.js';
+import {
+  archivePage,
+  createArchiveIndex,
+  emptyArchiveState,
+  filterArchive,
+  type ArchivePage,
+  type ArchiveState,
+} from './archive.js';
 import { t } from './i18n.js';
 import { chronologicalEntries, formatDate, routeFor, type PublicEntry } from './contracts.js';
 import { Icon } from './ui.js';
@@ -12,14 +21,61 @@ export function ArchiveTimeline<T extends TimelineEntry>({
   compact = false,
   onOpen,
   collections = defaultCollections,
+  page,
+  state = emptyArchiveState(),
 }: {
   entries: readonly T[];
   compact?: boolean;
   onOpen?: (entry: T) => void;
   collections?: CollectionsConfig;
+  page?: ArchivePage;
+  state?: ArchiveState;
 }) {
   const published = chronologicalEntries(entries);
-  const years = [...new Set(published.map((e) => e.publishedAt.slice(0, 4)))];
+  if (!compact) {
+    const model =
+      page ||
+      archivePage(
+        filterArchive(
+          createArchiveIndex(
+            published.map((entry) => ({
+              id: entry.id,
+              title: entry.title,
+              summary: entry.summary,
+              publishedAt: entry.publishedAt,
+              kind: entry.kind,
+              lang: entry.lang,
+              tags: entry.tags,
+              cover: entry.cover,
+              url: routeFor(entry, collections),
+            })),
+          ),
+          state,
+        ),
+      );
+    return (
+      <div
+        onClick={
+          onOpen
+            ? (event) => {
+                const id = (event.target as HTMLElement).closest<HTMLElement>('[data-archive-open]')
+                  ?.dataset.archiveOpen;
+                const entry = entries.find((entry) => entry.id === id);
+                if (entry) onOpen(entry);
+              }
+            : undefined
+        }
+        dangerouslySetInnerHTML={{
+          __html: archiveTimelineHtml(
+            model,
+            { posts: collections.posts.singular, lab: collections.lab.singular },
+            state,
+            !!onOpen,
+          ),
+        }}
+      />
+    );
+  }
   function list(source: T[]) {
     return (
       <ol className="post-timeline-list">
@@ -70,7 +126,7 @@ export function ArchiveTimeline<T extends TimelineEntry>({
                 <button
                   className={className}
                   onClick={() => onOpen(entry)}
-                  aria-label={t("Edit {value0}", {value0: entry.title})}
+                  aria-label={t('Edit {value0}', { value0: entry.title })}
                 >
                   {content}
                 </button>
@@ -91,60 +147,8 @@ export function ArchiveTimeline<T extends TimelineEntry>({
     );
   }
   return (
-    <div
-      className={`post-timeline${compact ? ' timeline-compact' : ' editorial-timeline'}`}
-      data-timeline
-    >
-      {!compact && (
-        <nav className="timeline-year-rail" aria-label={t("Archive years")} data-ui-attrs={"{\"aria-label\":\"Archive years\"}"} >
-          <span className="eyebrow" data-ui={"Years"}>{t("Years")}</span>
-          <div className="year-rail-track">
-            {years.map((year) => (
-              <a key={year} href={`#archive-year-${year}`} data-year-link={year}>
-                <span>{year}</span>
-                <small data-year-count>
-                  {published.filter((e) => e.publishedAt.startsWith(year)).length}
-                </small>
-              </a>
-            ))}
-          </div>
-        </nav>
-      )}
-      <div className="timeline-years">
-        {compact
-          ? list(published)
-          : years.map((year) => {
-              const source = published.filter((e) => e.publishedAt.startsWith(year));
-              const months = [...new Set(source.map((e) => e.publishedAt.slice(0, 7)))];
-              return (
-                <section
-                  className="post-timeline-year"
-                  id={`archive-year-${year}`}
-                  data-timeline-year
-                  key={year}
-                  data-year={year}
-                >
-                  <div className="timeline-year-label">
-                    <h2>{year}</h2>
-                    <span>
-                      {source.length} {source.length === 1 ? t("entry") : t("entries")}
-                    </span>
-                  </div>
-                  {months.map((month) => (
-                    <section className="timeline-month" data-timeline-month key={month}>
-                      <h3 className="timeline-month-heading">
-                        {new Date(`${month}-01T12:00:00Z`).toLocaleDateString('en-US', {
-                          month: 'long',
-                          timeZone: 'UTC',
-                        })}
-                      </h3>
-                      {list(source.filter((e) => e.publishedAt.startsWith(month)))}
-                    </section>
-                  ))}
-                </section>
-              );
-            })}
-      </div>
+    <div className="post-timeline timeline-compact" data-timeline>
+      <div className="timeline-years">{list(published)}</div>
     </div>
   );
 }

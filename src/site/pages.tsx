@@ -1,3 +1,16 @@
+import { ArchiveControls } from '../shared/ArchiveControls.js';
+import { archivePaginationHtml } from '../shared/archive-html.js';
+import {
+  archivePage,
+  archivePageNumber,
+  archivePageSize,
+  archiveRoute,
+  archiveTopics,
+  createArchiveIndex,
+  emptyArchiveState,
+  filterArchive,
+  type ArchiveCatalog,
+} from '../shared/archive.js';
 import { LanguageMenu } from './LanguageMenu.js';
 import { t, uiAttrs } from '../shared/i18n.js';
 import { UiText } from '../shared/UiText.js';
@@ -238,6 +251,7 @@ export async function createRenderer(
     diagramCacheDir?: string;
     readerAssets?: ReaderAssets;
     brandingVersion?: string;
+    archiveThumbnails?: Map<string, { src: string; width: number; height: number }>;
   } = {},
 ) {
   const includeDrafts = rendererOptions.includeDrafts === true;
@@ -386,7 +400,7 @@ export async function createRenderer(
                 aria-current={
                   current === item.href ||
                   (item.href === '/archive/' &&
-                    (current.startsWith('/tags/') ||
+                    (current.startsWith('/archive/') || current.startsWith('/tags/') ||
                       (['posts', 'lab'] as const).some((kind) =>
                         current.startsWith(collectionIndexRoute(kind, site.collections)),
                       ))) ||
@@ -744,7 +758,7 @@ export async function createRenderer(
             )}
             <script src={assets.appearance} />
             <link rel="stylesheet" href={assets.style} />
-            {assets.discoveryStyle && ['/projects/', '/search/'].includes(current) && (
+            {assets.discoveryStyle && (['/projects/', '/search/', '/__components/'].includes(current) || current.startsWith('/archive/')) && (
               <link rel="stylesheet" href={assets.discoveryStyle} />
             )}
             {assets.codeStyle &&
@@ -2078,90 +2092,105 @@ export async function createRenderer(
       },
     );
   }
-  function chronologicalArchive() {
-    const published = chronologicalEntries(entries);
+  // One sorted metadata index and one selection for every numbered static page.
+  const archiveIndex = createArchiveIndex(
+    entries
+      .filter((entry) => entry.status === 'published')
+      .map((entry) => ({
+        id: entry.id,
+        title: entry.title,
+        summary: entry.summary,
+        publishedAt: entry.publishedAt,
+        kind: entry.kind,
+        lang: entry.lang,
+        tags: entry.tags,
+        ...(entry.cover ? { cover: entry.cover } : {}),
+        url: routeFor(entry, site.collections),
+      })),
+  );
+  const archiveSelection = filterArchive(archiveIndex, emptyArchiveState());
+  const archiveCatalog: ArchiveCatalog = {
+    version: 1,
+    labels: { posts: site.collections.posts.singular, lab: site.collections.lab.singular },
+    records: archiveIndex.records.map((entry) => {
+      const thumbnail = entry.cover && rendererOptions.archiveThumbnails?.get(entry.cover);
+      return {
+        ...entry,
+        ...(thumbnail
+          ? { cover: thumbnail.src, coverWidth: thumbnail.width, coverHeight: thumbnail.height }
+          : {}),
+      };
+    }),
+  };
+  const archiveCatalogJson = scriptJson(archiveCatalog);
+  // Delivery changes the final image URLs; never reuse an immutable catalog across delivery contexts.
+  const archiveCatalogPath = `/assets/archive/catalog-${digest(archiveCatalogJson + JSON.stringify(site.mediaDelivery)).slice(0, 20)}.json`;
+  const archivePages = Math.max(1, Math.ceil(archiveSelection.records.length / archivePageSize));
+  function chronologicalArchive(number = 1) {
+    const page = archivePage(archiveSelection, number),
+      state = emptyArchiveState();
     return document(
-      '/archive/',
+      archiveRoute(number),
       'Archive',
-      <div className="archive-page" data-timeline-browser>
-        <h1 className="sr-only" data-ui={'Archive'}>
+      <div
+        className="archive-page"
+        data-timeline-browser
+        data-archive-catalog={isPreview ? undefined : archiveCatalogPath}
+        data-archive-worker={assets.archiveWorker}
+        data-archive-page={number}
+        data-archive-years={JSON.stringify(page.years)}
+        data-archive-labels={JSON.stringify(archiveCatalog.labels)}
+      >
+        <h1 className="sr-only" data-ui="Archive">
           {t('Archive')}
         </h1>
-        <div className="timeline-controls">
-          <div
-            className="timeline-filters"
-            role="group"
-            aria-label={t('Filter archive by kind')}
-            data-ui-attrs={'{"aria-label":"Filter archive by kind"}'}
-          >
-            {(
-              [
-                ['all', 'All entries'],
-                ['posts', site.collections.posts.name],
-                ['lab', site.collections.lab.name],
-              ] as const
-            ).map(([kind, label]) => (
-              <button
-                key={kind}
-                className={`chip${kind === 'all' ? ' active' : ''}`}
-                data-timeline-filter={kind}
-                aria-pressed={kind === 'all'}
-              >
-                <Icon
-                  name={kind === 'all' ? 'Archive' : kind === 'posts' ? 'BookOpen' : 'FlaskConical'}
-                  size={13}
-                />
-                {label}
-              </button>
-            ))}
-          </div>
-          <div className="archive-search">
-            <Icon name="Search" size={15} />
-            <input
-              type="search"
-              aria-label={t('Filter archive')}
-              placeholder={t('Find a page…')}
-              data-timeline-search
-              data-ui-attrs={'{"aria-label":"Filter archive","placeholder":"Find a page…"}'}
-            />
-          </div>
+        <ArchiveControls
+          state={state}
+          collections={site.collections}
+          topics={archiveTopics(archiveIndex, '')}
+        />
+        <div className="archive-status-row">
+          <p className="timeline-count" data-timeline-count aria-live="polite">
+            <span
+              data-ui={page.total === 1 ? '{value0} published entry' : '{value0} published entries'}
+              data-ui-params={JSON.stringify({ value0: page.total })}
+            >
+              {page.total === 1
+                ? t('{value0} published entry', { value0: page.total })
+                : t('{value0} published entries', { value0: page.total })}
+            </span>
+          </p>
+          <span className="archive-filter-status" role="status" data-archive-status></span>
+          <button type="button" className="text-link" data-archive-retry hidden>
+            {t('Retry')}
+          </button>
         </div>
-        <p className="timeline-count" data-timeline-count aria-live="polite">
-          {published.length} <UiText message={' published '} />
-          {published.length === 1 ? t('entry') : t('entries')}
-        </p>
-        <label className="timeline-tag-select">
-          <UiText message={'Topic'} />{' '}
-          <select
-            data-timeline-tag
-            aria-label={t('Filter archive by topic')}
-            data-ui-attrs={'{"aria-label":"Filter archive by topic"}'}
-          >
-            <option value="" data-ui={'All topics'}>
-              {t('All topics')}
-            </option>
-            {[...new Set(published.flatMap((e) => e.tags))].sort().map((tag) => (
-              <option key={tag} value={tag}>
-                {tag}
-              </option>
-            ))}
-          </select>
-        </label>
-        <ArchiveTimeline entries={published} collections={site.collections} />
-        <p
-          className="no-results"
-          data-timeline-empty
-          hidden
-          data-ui={'No entries match. Try another word or kind.'}
-        >
+        <div data-archive-results>
+          <ArchiveTimeline entries={[]} collections={site.collections} page={page} />
+        </div>
+        <div
+          data-archive-pagination
+          dangerouslySetInnerHTML={{ __html: archivePaginationHtml(page, state) }}
+        />
+        <p className="no-results" data-timeline-empty hidden>
           {t('No entries match. Try another word or kind.')}
         </p>
-        {!published.length && (
+        {!page.total && (
           <EmptyState icon="BookOpen" title={t('Your timeline starts here')}>
-            <UiText message={'Published entries from '} />
-            {site.collections.posts.name} <UiText message={' and '} />
-            {site.collections.lab.name} <UiText message={'will appear in the archive.'} />
+            {t('Published entries will appear in the archive.')}
           </EmptyState>
+        )}
+        <noscript>
+          <p className="timeline-count">
+            {t('Use the page numbers and years to browse every published entry.')}
+          </p>
+        </noscript>
+        {isPreview && (
+          <script
+            type="application/json"
+            data-archive-embedded
+            dangerouslySetInnerHTML={{ __html: archiveCatalogJson }}
+          />
         )}
       </div>,
     );
@@ -2542,7 +2571,7 @@ export async function createRenderer(
     collectionIndexRoute('posts', site.collections),
     collectionIndexRoute('lab', site.collections),
     collectionIndexRoute('life', site.collections),
-    '/archive/',
+    ...Array.from({ length: archivePages }, (_, i) => archiveRoute(i + 1)),
     '/projects/',
     '/search/',
     '/about/',
@@ -2566,7 +2595,8 @@ export async function createRenderer(
     if (current === collectionIndexRoute('posts', site.collections)) return archive('posts');
     if (current === collectionIndexRoute('lab', site.collections)) return archive('lab');
     if (current === collectionIndexRoute('life', site.collections)) return life();
-    if (current === '/archive/') return chronologicalArchive();
+    if (current === '/archive/' || /^\/archive\/page\/[1-9]\d*\/$/.test(current))
+      return chronologicalArchive(archivePageNumber(current));
     if (current === '/search/')
       return document(
         '/search/',
@@ -2607,7 +2637,7 @@ export async function createRenderer(
         />,
       );
     if (current === '/about/') return aboutPage();
-    if (current === '/tools/') return document('/tools/', 'Tools', <ToolsPage/>);
+    if (current === '/tools/') return document('/tools/', 'Tools', <ToolsPage />);
     if (current === '/settings/')
       return document(
         '/settings/',
@@ -2670,6 +2700,7 @@ export async function createRenderer(
   }));
   return {
     render,
+    archiveCatalog: { path: archiveCatalogPath, data: archiveCatalogJson },
     routes,
     entries,
     search,

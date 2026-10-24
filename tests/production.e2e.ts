@@ -46,6 +46,16 @@ test('production diagrams, math and static components are complete without reade
       expect(response.ok()).toBe(true);
       expect(response.headers()['cache-control']).toBe('public, max-age=31536000, immutable');
     }
+    expect(manifest.archiveWorker).toMatch(/^\/assets\/bundles\/[a-f0-9]{20}\/archive-worker\.js$/);
+    expect((await request.get(origin + manifest.archiveWorker)).headers()['cache-control']).toBe(
+      'public, max-age=31536000, immutable',
+    );
+    const archive = await (await request.get(origin + '/archive/')).text();
+    const catalogPath = archive.match(/data-archive-catalog="([^"]+)"/)![1];
+    const catalog = await request.get(origin + catalogPath);
+    expect(catalog.headers()['cache-control']).toBe('public, max-age=31536000, immutable');
+    expect((await catalog.json()).version).toBe(1);
+    expect(await catalog.text()).not.toContain('A thought in progress');
     const metadata = await request.get(origin + '/assets/media-details.json');
     expect(metadata.headers()['cache-control']).toBe('public, max-age=0, must-revalidate');
     expect((await request.get(origin + '/')).headers()['cache-control']).toBe(

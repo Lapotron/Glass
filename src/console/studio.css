@@ -1,5 +1,6 @@
 @import url('./local-settings.css');
 @import url('../shared/styles.css');
+@import url('../shared/archive.css');
 @import url('./recovery.css');
 @import url('./preview.css');
 @import url('./about.css');

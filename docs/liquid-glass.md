@@ -39,3 +39,7 @@ Review the specimen over its visible grid, then the real navigation over scrolli
 Maintain the showcase when adding a component or material. Keep the optical layer below content and preserve static fallbacks. The project does not claim to reproduce Apple's private native renderer.
 
 The automated WebKit renderer on this machine omitted backdrop blur in both a standalone specimen and a dialog, despite accepting the property. Its checks establish usable fallback tint, layout, focus, and motion behavior; they do not prove a Safari optical match. Chromium screenshot differences establish actual displacement. Consult [WebKit's backdrop-filter demonstration](https://webkit.org/demos/backdrop-filter/) when reviewing a native Safari installation.
+
+## Anchored floating surfaces
+
+A non-top-layer floating panel inside an optical control may declare `data-liquid-floating`. Registration ignores the optical ancestor for that panel, so a `glass-panel` retains the regular shared material instead of becoming a nearly transparent inset. The archive topic picker uses this explicit presentation flag. It adds no geometry filter, changes no persisted theme setting and still follows reduced transparency/contrast. Native dialogs and popovers preserve their existing top-layer policy.

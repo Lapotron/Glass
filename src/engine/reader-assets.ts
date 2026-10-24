@@ -57,6 +57,7 @@ export async function stageReaderAssets(source: string, output: string): Promise
     ...(files.includes('settings.css') ? { settingsStyle: `${base}/settings.css` } : {}),
     ...(files.includes('tools.js') ? { toolsScript: `${base}/tools.js` } : {}),
     ...(files.includes('tools.css') ? { toolsStyle: `${base}/tools.css` } : {}),
+    ...(files.includes('archive-worker.js') ? { archiveWorker: `${base}/archive-worker.js` } : {}),
     ...(search ? { search: `${base}/${search}` } : {}),
     ...(Object.keys(chartModules).length ? { chartModules } : {}),
   };
@@ -87,6 +88,7 @@ export async function readReaderAssets(output: string): Promise<ReaderAssets> {
       ...(manifest.contentStyle !== undefined ? ['contentStyle'] : []),
       ...(manifest.settingsStyle !== undefined ? ['settingsStyle'] : []),
       ...(manifest.toolsStyle !== undefined ? ['toolsStyle'] : []),
+      ...(manifest.archiveWorker !== undefined ? ['archiveWorker'] : []),
       ...(manifest.toolsScript !== undefined ? ['toolsScript'] : []),
     ].every((key) =>
       /^\/assets\/bundles\/[a-f0-9]{20}\/[\w.-]+$/.test(

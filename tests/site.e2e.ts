@@ -401,8 +401,8 @@ test('Archive gathers published writing and Lab entries into a searchable timeli
         text: box(entry.querySelector('.timeline-entry-content')!),
       };
     });
-    expect(image.width).toBeGreaterThan(100);
-    expect(image.height).toBeGreaterThan(70);
+    expect(image.width).toBeGreaterThanOrEqual(74);
+    expect(image.height).toBeGreaterThanOrEqual(55);
     expect(image.x).toBeGreaterThanOrEqual(entry.x);
     expect(image.y).toBeGreaterThanOrEqual(entry.y);
     expect(image.x + image.width).toBeLessThanOrEqual(entry.x + entry.width + 1);

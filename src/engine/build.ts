@@ -133,6 +133,22 @@ export async function buildAssets(root: string) {
         },
       });
     }
+    await bundle({
+      configFile: false,
+      root: sourceRoot,
+      logLevel: 'error',
+      build: {
+        outDir: output,
+        emptyOutDir: false,
+        target: 'es2022',
+        minify: true,
+        lib: {
+          entry: path.join(sourceRoot, 'src/site/archive-worker.ts'),
+          formats: ['es'],
+          fileName: () => 'archive-worker.js',
+        },
+      },
+    });
     // A classic, self-contained script applies reader choices before the first paint.
     await bundle({
       configFile: false,
@@ -316,6 +332,21 @@ export async function buildSite(
     diagramCacheDir: path.join(store.root, '.studio/render-cache/mermaid'),
     readerAssets,
     brandingVersion,
+    archiveThumbnails: new Map(
+      mediaFiles
+        .filter((file) => file.width && /\.(png|jpe?g|webp|avif)$/i.test(file.url))
+        .map((file) => {
+          const width = responsiveWidths(file.width!)[0];
+          return [
+            file.url,
+            {
+              src: file.url.replace(/\.[^.]+$/, `-${width}.webp`),
+              width,
+              height: Math.max(1, Math.round((width * (file.height || file.width!)) / file.width!)),
+            },
+          ];
+        }),
+    ),
   });
   const normalized = renderer.routes.map((r) =>
     decodeURIComponent(r).normalize('NFC').toLowerCase(),
@@ -406,6 +437,11 @@ export async function buildSite(
     await fs.writeFile(target, html);
   }
   const url = model.site.url.replace(/\/$/, '');
+  await fs.mkdir(path.join(output, 'assets/archive'), { recursive: true });
+  await fs.writeFile(
+    path.join(output, renderer.archiveCatalog.path.slice(1)),
+    renderer.archiveCatalog.data,
+  );
   await fs.writeFile(path.join(output, 'search.json'), JSON.stringify(renderer.search));
   await fs.writeFile(
     path.join(output, 'assets/reading-catalog.json'),
@@ -446,7 +482,7 @@ export async function buildSite(
   );
   await fs.writeFile(
     path.join(output, '_headers'),
-    `/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n  Permissions-Policy: camera=(), microphone=(), geolocation=()\n  Content-Security-Policy: ${contentSecurityPolicy(model.site)}\n/assets/*\n  Access-Control-Allow-Origin: *\n${model.site.mediaProtection.discourageIndexing ? '  X-Robots-Tag: noindex\n' : ''}/assets/deployment.json\n  Cache-Control: no-store\n/assets/reader-assets.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/reading-catalog.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/search-manifest.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/search/*\n  Cache-Control: public, max-age=31536000, immutable\n/assets/media-details.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/annotation-config.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/discussion-:mode.css\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/bundles/*\n  Cache-Control: public, max-age=31536000, immutable\n/assets/themes/*\n  Cache-Control: public, max-age=31536000, immutable\n/assets/chunks/*\n  Cache-Control: public, max-age=31536000, immutable\n${model.site.mediaProtection.discourageIndexing ? '/m/*\n  X-Robots-Tag: noindex\n' : ''}/media/*\n${model.site.mediaProtection.discourageIndexing ? '  X-Robots-Tag: noindex\n' : ''}  Cache-Control: public, max-age=3600\n  Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; sandbox\n`,
+    `/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n  Permissions-Policy: camera=(), microphone=(), geolocation=()\n  Content-Security-Policy: ${contentSecurityPolicy(model.site)}\n/assets/*\n  Access-Control-Allow-Origin: *\n${model.site.mediaProtection.discourageIndexing ? '  X-Robots-Tag: noindex\n' : ''}/assets/deployment.json\n  Cache-Control: no-store\n/assets/reader-assets.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/reading-catalog.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/search-manifest.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/archive/*\n  Cache-Control: public, max-age=31536000, immutable\n/assets/search/*\n  Cache-Control: public, max-age=31536000, immutable\n/assets/media-details.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/annotation-config.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/discussion-:mode.css\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/bundles/*\n  Cache-Control: public, max-age=31536000, immutable\n/assets/themes/*\n  Cache-Control: public, max-age=31536000, immutable\n/assets/chunks/*\n  Cache-Control: public, max-age=31536000, immutable\n${model.site.mediaProtection.discourageIndexing ? '/m/*\n  X-Robots-Tag: noindex\n' : ''}/media/*\n${model.site.mediaProtection.discourageIndexing ? '  X-Robots-Tag: noindex\n' : ''}  Cache-Control: public, max-age=3600\n  Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; sandbox\n`,
   );
   if (model.site.integrations.comments.enabled) {
     const prefix = discussionThemePrefix(model.site).slice(1);
@@ -516,7 +552,7 @@ export async function buildSite(
           (entry) => routeFor(entry, model.site.collections) === route,
         );
         const target = model.entries.find((entry) =>
-          [...routesForEntry(entry, model.site.collections),...entry.routeAliases].some(
+          [...routesForEntry(entry, model.site.collections), ...entry.routeAliases].some(
             (path) => decodeURIComponent(path) === decodeURIComponent(link),
           ),
         );

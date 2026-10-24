@@ -1,8 +1,20 @@
+import { watchArchivePosition } from '../shared/archive-position.js';
 import { t } from '../shared/i18n.js';
 import { UiText } from '../shared/UiText.js';
-import { useState } from 'react';
-import { chronologicalEntries, type PublicEntry } from '../shared/contracts.js';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { routeFor, type PublicEntry } from '../shared/contracts.js';
 import { ArchiveTimeline } from '../shared/ArchiveTimeline.js';
+import { ArchiveControls } from '../shared/ArchiveControls.js';
+import {
+  archivePage,
+  archivePageNumber,
+  archiveTopics,
+  createArchiveIndex,
+  emptyArchiveState,
+  filterArchive,
+  type ArchiveState,
+} from '../shared/archive.js';
+import { archivePaginationHtml } from '../shared/archive-html.js';
 import { EmptyState, Icon } from '../shared/ui.js';
 import { PageHeading } from './components.js';
 import type { CollectionsConfig } from '../shared/collections.js';
@@ -16,69 +28,109 @@ export function Archive({
   onOpen: (entry: PublicEntry) => void;
   collections: CollectionsConfig;
 }) {
-  const [kind, setKind] = useState('all');
-  const [query, setQuery] = useState('');
-  const published = chronologicalEntries(entries);
-  const filtered = published.filter(
-    (entry) =>
-      (kind === 'all' || entry.kind === kind) &&
-      `${entry.title} ${entry.summary} ${entry.tags.join(' ')}`
-        .toLowerCase()
-        .includes(query.trim().toLowerCase()),
+  const surface = useRef<HTMLDivElement>(null);
+  const [state, setState] = useState(emptyArchiveState);
+  const [number, setNumber] = useState(1);
+  const [topicQuery, setTopicQuery] = useState('');
+  const index = useMemo(
+    () =>
+      createArchiveIndex(
+        entries
+          .filter((entry) => entry.status === 'published')
+          .map((entry) => ({
+            id: entry.id,
+            title: entry.title,
+            summary: entry.summary,
+            publishedAt: entry.publishedAt,
+            kind: entry.kind,
+            lang: entry.lang,
+            tags: entry.tags,
+            ...(entry.cover ? { cover: entry.cover } : {}),
+            url: routeFor(entry, collections),
+          })),
+      ),
+    [entries, collections],
   );
+  const selection = useMemo(() => filterArchive(index, state), [index, state]);
+  const page = useMemo(() => archivePage(selection, number), [selection, number]);
+  useEffect(() => {
+    if (!surface.current) return;
+    const tracker = watchArchivePosition(surface.current);
+    return tracker.stop;
+  }, [page]);
+  const byId = useMemo(() => new Map(entries.map((entry) => [entry.id, entry])), [entries]);
+  const visible = page.groups.flatMap((group) =>
+    group.months.flatMap((month) => month.entries.map((entry) => byId.get(entry.id)!)),
+  );
+  const change = (next: ArchiveState) => {
+    setState(next);
+    setNumber(1);
+  };
   return (
-    <div className="studio-page">
+    <div
+      ref={surface}
+      className="studio-page studio-archive"
+      onClick={(event) => {
+        const link = (event.target as HTMLElement).closest<HTMLAnchorElement>(
+          '.archive-pagination a,[data-year-link]',
+        );
+        if (!link) return;
+        event.preventDefault();
+        const url = new URL(link.href);
+        setNumber(archivePageNumber(url.pathname));
+        requestAnimationFrame(() => {
+          const year = url.hash && document.getElementById(url.hash.slice(1));
+          (year || document.querySelector('.studio-archive .timeline-count'))?.scrollIntoView({
+            block: 'start',
+          });
+        });
+      }}
+    >
       <PageHeading
-        eyebrow={t("The archive")}
-        title={t("Every page, in its own time.")}
-        description={t("A timeline of published {value0} and {value1}. Open an entry to edit its title, date, or content.", {value0: collections.posts.name, value1: collections.lab.name})}
+        eyebrow={t('The archive')}
+        title={t('Every page, in its own time.')}
+        description={t(
+          'A timeline of published {value0} and {value1}. Open an entry to edit its title, date, or content.',
+          { value0: collections.posts.name, value1: collections.lab.name },
+        )}
       >
         <a className="button secondary small" href="/archive/" target="_blank" rel="noreferrer">
-          <UiText message={"Visit archive"}/><Icon name="ArrowUpRight" size={14} />
+          <UiText message="Visit archive" />
+          <Icon name="ArrowUpRight" size={14} />
         </a>
       </PageHeading>
-      <div className="timeline-controls">
-        <div className="timeline-filters" role="group" aria-label={t("Filter archive by kind")} data-ui-attrs={"{\"aria-label\":\"Filter archive by kind\"}"} >
-          {(
-            [
-              ['all', 'All entries'],
-              ['posts', collections.posts.name],
-              ['lab', collections.lab.name],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              key={value}
-              className={`chip${kind === value ? ' active' : ''}`}
-              aria-pressed={kind === value}
-              onClick={() => setKind(value)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div className="archive-search">
-          <Icon name="Search" size={15} />
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("Find a page…")}
-            aria-label={t("Filter archive")}
-           data-ui-attrs={"{\"placeholder\":\"Find a page…\",\"aria-label\":\"Filter archive\"}"} />
-        </div>
-      </div>
+      <ArchiveControls
+        state={state}
+        collections={collections}
+        topics={archiveTopics(index, topicQuery)}
+        onChange={change}
+        onTopicQuery={setTopicQuery}
+      />
       <p className="timeline-count" aria-live="polite">
-        {filtered.length} <UiText message={" published "}/>{filtered.length === 1 ? t("entry") : t("entries")}
+        {t('{value0} published {value1}', {
+          value0: page.total,
+          value1: page.total === 1 ? t('entry') : t('entries'),
+        })}
       </p>
-      <ArchiveTimeline entries={filtered} onOpen={onOpen} collections={collections} />
-      {!filtered.length && (
+      <ArchiveTimeline
+        entries={visible}
+        page={page}
+        state={state}
+        onOpen={onOpen}
+        collections={collections}
+      />
+      <div dangerouslySetInnerHTML={{ __html: archivePaginationHtml(page, state) }} />
+      {!page.total && (
         <EmptyState
           icon="BookOpen"
-          title={published.length ? t("No pages match") : t("Your timeline starts here")}
+          title={index.records.length ? t('No pages match') : t('Your timeline starts here')}
         >
-          {published.length
-            ? t("Try another word or kind.")
-            : t("Publish an entry in {value0} or {value1} to start the archive.", {value0: collections.posts.name, value1: collections.lab.name})}
+          {index.records.length
+            ? t('Try another word or kind.')
+            : t('Publish an entry in {value0} or {value1} to start the archive.', {
+                value0: collections.posts.name,
+                value1: collections.lab.name,
+              })}
         </EmptyState>
       )}
     </div>

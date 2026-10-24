@@ -177,6 +177,7 @@ it('builds referenced public metadata only, strips embedded EXIF and keeps opt-o
 }, 30000);
 it('rewrites image destinations, responsive sources, widget data, OG and wallpaper without changing prose', async () => {
   const { model, entry, file } = await publishedPicture();
+  model.entries.find((record) => record.id === entry.id)!.summary = file.url;
   const built = await buildSite(store, { model, assets });
   const delivered = await prepareMediaDelivery(built, model.site);
   expect(
@@ -187,6 +188,31 @@ it('rewrites image destinations, responsive sources, widget data, OG and wallpap
     '/assets/deployment.json\n  Cache-Control: no-store',
   );
   expect(delivered.outputDir).not.toBe(built.outputDir);
+  const originalCatalog = built.manifest.find((file) => /^assets\/archive\/catalog-/.test(file))!;
+  const deliveredCatalog = delivered.manifest.find((file) =>
+    /^assets\/archive\/catalog-/.test(file),
+  )!;
+  const catalogBytes = await fs.readFile(path.join(delivered.outputDir, deliveredCatalog));
+  expect(deliveredCatalog).toBe(`assets/archive/catalog-${digest(catalogBytes).slice(0, 20)}.json`);
+  expect(deliveredCatalog).not.toBe(originalCatalog);
+  expect(
+    JSON.parse(catalogBytes.toString()).records.find((e: { id: string }) => e.id === entry.id)
+      .cover,
+  ).toMatch(/^https:\/\/media\.journal\.example\//);
+  expect(
+    JSON.parse(catalogBytes.toString()).records.find((e: { id: string }) => e.id === entry.id)
+      .summary,
+  ).toBe(file.url);
+  const archiveHtml = await fs.readFile(
+    path.join(delivered.outputDir, 'archive/index.html'),
+    'utf8',
+  );
+  expect(archiveHtml).toContain(`data-archive-catalog="/${deliveredCatalog}"`);
+  expect(archiveHtml).not.toContain('/' + originalCatalog);
+  expect(await fs.readFile(path.join(built.outputDir, originalCatalog), 'utf8')).toContain(
+    '/media/',
+  );
+
   const image = delivered.media!.assets.find((asset) => asset.file === 'media/' + file.name)!;
   expect(image.url).toContain('/media/v2/' + image.sha256 + '.');
   // A CDN failure must retain an identical same-origin image for the viewer.

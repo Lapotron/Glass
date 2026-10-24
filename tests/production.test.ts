@@ -138,12 +138,14 @@ it('fingerprints the complete reader bundle, excludes private files and reports 
     'settings.css',
     'appearance.js',
     'annotations-worker.js',
+    'archive-worker.js',
     '.complete',
     'private.map',
     'chunks/search-fixture.js',
   ])
     await fs.writeFile(path.join(source, file), '/* fixture */');
   const first = await stageReaderAssets(source, output);
+  expect(first.archiveWorker).toBe(`${path.dirname(first.script)}/archive-worker.js`);
   expect(first.search).toBe(`${path.dirname(first.script)}/chunks/search-fixture.js`);
   expect(first.settingsStyle).toBe(`${path.dirname(first.script)}/settings.css`);
   expect(await readReaderAssets(output)).toEqual(first);
@@ -174,6 +176,15 @@ it('fingerprints the complete reader bundle, excludes private files and reports 
     JSON.stringify({ ...first, search: 'https://outside.invalid/search.js' }),
   );
   await expect(readReaderAssets(output)).rejects.toThrow('manifest is invalid');
+  await fs.writeFile(
+    path.join(output, 'assets/reader-assets.json'),
+    JSON.stringify({ ...first, archiveWorker: 'https://outside.invalid/worker.js' }),
+  );
+  await expect(readReaderAssets(output)).rejects.toThrow('manifest is invalid');
+  const legacy = { ...first };
+  delete legacy.archiveWorker;
+  await fs.writeFile(path.join(output, 'assets/reader-assets.json'), JSON.stringify(legacy));
+  expect((await readReaderAssets(output)).archiveWorker).toBeUndefined();
 });
 it('uses actual widths consistently in images and preload candidates while retaining authored layout', () => {
   expect(responsiveWidths(200)).toEqual([200]);
