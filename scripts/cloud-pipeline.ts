@@ -17,6 +17,23 @@ if (phase === 'build') {
   let mode: PipelineMode = 'studio';
   const branch = process.env.WORKERS_CI_BRANCH || process.env.GLASS_PRODUCTION_BRANCH || 'main',
     preview = branch !== (process.env.GLASS_PRODUCTION_BRANCH || 'main');
+  console.log(
+    'Glass pipeline setup: ' +
+      (preview ? 'preview branch' : 'production branch') +
+      '; CI token ' +
+      (process.env.GLASS_CI_TOKEN ? 'configured' : 'missing') +
+      '; bootstrap ' +
+      (process.env.GLASS_PIPELINE_BOOTSTRAP === 'true' ? 'enabled' : 'disabled') +
+      '.',
+  );
+  if (!preview && !process.env.GLASS_CI_TOKEN)
+    console.log(
+      'Publish requests cannot be claimed until GLASS_CI_TOKEN is configured in Workers Builds GLASS_CI_SECRETS. This run can update Studio only.',
+    );
+  if (!preview && process.env.GLASS_PIPELINE_BOOTSTRAP === 'true')
+    console.log(
+      'Explicit bootstrap skips Publish. Remove GLASS_PIPELINE_BOOTSTRAP after the first successful Studio deployment.',
+    );
   if (!preview && process.env.GLASS_CI_TOKEN && process.env.GLASS_PIPELINE_BOOTSTRAP !== 'true') {
     if (!process.env.WORKERS_CI_BUILD_UUID)
       throw new Error(

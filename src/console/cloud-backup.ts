@@ -2,12 +2,13 @@ import { api, cloudSessionToken, workspacePreferenceKey, ApiError } from './api.
 import type { RestoreReview } from '../engine/backup.js';
 import { formatBytes } from '../shared/media-details.js';
 import { t } from '../shared/i18n.js';
+import type { BackupImportProgress } from '../shared/backup-progress.js';
 function backupWorker() {
   return new Worker(new URL('./cloud-backup.worker.ts', import.meta.url), { type: 'module' });
 }
 export async function importCloudBackup(
   file: File | { id: string; bytes: number; revision: string; name: string },
-  options: { signal: AbortSignal; progress: (bytes: number) => void },
+  options: { signal: AbortSignal; progress: (progress: BackupImportProgress) => void },
 ): Promise<RestoreReview> {
   const key = workspacePreferenceKey('native-backup-import'),
     sample =
@@ -47,7 +48,7 @@ export async function importCloudBackup(
       const data = event.data;
       if (data.type === 'session')
         localStorage.setItem(key, JSON.stringify({ fingerprint, migration: data.session }));
-      if (data.type === 'progress') options.progress(data.bytes);
+      if (data.type === 'import-progress') options.progress(data.progress);
       if (data.type === 'error') {
         stop();
         reject(new Error(data.message));

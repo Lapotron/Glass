@@ -6,6 +6,8 @@ The Projects preview uses a bounded viewport inside its glass card. Its heading 
 
 Studio's version badge sits beside the breadcrumb in the topbar. Use a quiet control inset with a short monospaced revision, condense to the revision on phones, and retain its full accessible label. Build details reuse the shared native dialog and typographic fact rows, with wrapping commit text and normal focus return.
 
+Keep the Glass GitHub shortcut adjacent to the version in one nonbreaking group. Use the shared GitHub mark, matching control material, a localized accessible name and keyboard focus ring; open the public source repository in a separate tab so the current authoring view remains available.
+
 Glass uses a web interpretation of Apple's Liquid Glass: clear hierarchy, luminous edges, translucent functional layers, and calm reading surfaces. Reference structure: <https://wenhaochai.com/>. Material guidance: <https://developer.apple.com/design/human-interface-guidelines/materials>.
 
 ## Ownership
@@ -107,6 +109,8 @@ Outline/Annotations and Discussion/Annotations use the same compact segmented ta
 Honor `prefers-reduced-motion`, reduced transparency, and the explicit transparency setting. Keep solid-material fallback behavior. Animate feedback and small position changes; avoid perpetual decorative movement. Keep keyboard access, dialog focus, touch targets, and horizontal-overflow checks in visual review.
 
 Build and publication progress uses a quiet inset within the existing glass job panel, with a thin luminous track, connected stage markers, tabular elapsed time and wrapping media facts. Reuse atmosphere and status tokens; do not stack another optical filter inside the panel. Animate only active work. Measured media counts control the fill; build/upload phases remain indeterminate rather than showing an estimated percentage. Stopped jobs freeze at their failed stage, successful jobs complete every marker, and both remain still. Respect system and saved motion/transparency preferences. Keep stage labels and failure details readable at 320px and larger interface scales.
+
+Backup imports use the same quiet inset, an 8px luminous track and three compact stages: read, check/transfer and prepare review. Show cumulative confirmed payload against expanded payload size for hosted imports, compressed archive size for local transfers, and distinguish bytes uploaded from already stored data. Keep processing rate, elapsed time and approximate time remaining secondary. The fill stops below 100% until review is returned; archive reading and final verification use an indeterminate track. Announce stage changes only, keep parallel current-file text clipped with its full title available, and wrap facts into two columns on phones. Pause and completed states remain still; system and saved reduced motion remove the activity animation.
 
 The public navbar has one shared glass capsule. It follows pointer position or keyboard focus, reshapes to each label, and returns to the current page. Keep its fill in the shared tint family and avoid stacking another optical filter under its text. Resize and mobile-menu changes must update its geometry. Keep native links, modified clicks, fragments, and browser history intact.
 

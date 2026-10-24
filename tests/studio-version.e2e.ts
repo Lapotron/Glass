@@ -8,11 +8,22 @@ test('Studio identifies the loaded interface and keeps version details usable on
   await expect(badge).toBeVisible();
   await expect(badge).toContainText(/v\d+\.\d+\.\d+/);
   await expect(badge.locator('code')).toHaveText(/^[a-f\d]{7}$/);
+  const repository = page.getByRole('link', { name: 'Open Glass on GitHub', exact: true });
+  await expect(repository).toHaveAttribute('href', 'https://github.com/Lapotron/Glass');
+  await expect(repository).toHaveAttribute('target', '_blank');
+  await expect(repository).toHaveAttribute('rel', 'noopener noreferrer');
   for (const width of [1440, 800, 390, 320]) {
     await page.setViewportSize({ width, height: 900 });
     if (width === 320)
       await page.evaluate(() => document.documentElement.style.setProperty('--font-scale', '1.2'));
     await expect(badge).toBeVisible();
+    await expect(repository).toBeVisible();
+    for (const control of await page.locator('.studio-topbar button, .studio-topbar a').all()) {
+      if (!(await control.isVisible())) continue;
+      const box = (await control.boundingBox())!;
+      expect(box.x).toBeGreaterThanOrEqual(0);
+      expect(box.x + box.width).toBeLessThanOrEqual(width + 1);
+    }
     await expect
       .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1))
       .toBe(true);

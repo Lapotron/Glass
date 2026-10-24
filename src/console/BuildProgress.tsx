@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 import type { Job } from '../shared/contracts.js';
 import { Icon, type IconName } from '../shared/ui.js';
 import { buildProgress, elapsedTime } from './build-progress.js';
+import { isCloudStudio } from './api.js';
 
 export function BuildProgress({ job }: { job: Job }) {
-  const info = buildProgress(job),
+  const info = buildProgress(job, isCloudStudio()),
     [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (!info.active) return;

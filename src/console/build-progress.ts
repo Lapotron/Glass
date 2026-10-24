@@ -1,4 +1,5 @@
 import type { Job, JobState } from '../shared/contracts.js';
+import { t } from '../shared/i18n.js';
 
 const labels: Record<JobState, string> = {
   queued: 'Preparing your build',
@@ -11,7 +12,7 @@ const labels: Record<JobState, string> = {
   succeeded: 'Complete',
   failed: 'Needs attention',
 };
-export function buildProgress(job: Job) {
+export function buildProgress(job: Job, hosted = false) {
   const succeeded = job.state === 'succeeded',
     failed = job.state === 'failed';
   const legacyFailure: JobState = job.deployment
@@ -24,13 +25,15 @@ export function buildProgress(job: Job) {
   const state = failed ? job.failedAt || legacyFailure : job.state;
   const cloud = job.target?.project === 'Workers';
   const phaseLabel =
-    state === 'queued' && cloud
-      ? 'Waiting for Workers Builds'
-      : state === 'uploading' && cloud
-        ? 'Publishing the reader Worker'
-        : state === 'queued' && job.action === 'publish'
-          ? 'Checking Pages project'
-          : labels[state];
+    state === 'queued' && hosted
+      ? t('Waiting for Studio pipeline')
+      : state === 'queued' && cloud
+        ? 'Waiting for Workers Builds'
+        : state === 'uploading' && cloud
+          ? 'Publishing the reader Worker'
+          : state === 'queued' && job.action === 'publish'
+            ? 'Checking Pages project'
+            : labels[state];
   const media =
     job.action === 'publish' &&
     (job.mediaDelivery === 'r2' || Boolean(job.mediaProgress || job.build?.media));
@@ -92,11 +95,15 @@ export function buildProgress(job: Job) {
           : state === 'verifying-deployment'
             ? 'Confirming that the published site responds correctly.'
             : state === 'queued'
-              ? cloud
-                ? 'The captured notebook is waiting in the private build queue.'
-                : job.action === 'publish'
-                  ? 'Checking the configured Pages target before building or transferring images.'
-                  : 'Opening the saved notebook and preparing its files.'
+              ? hosted
+                ? t(
+                    'The captured notebook is waiting for its assigned Cloudflare build. No Pages upload has started.',
+                  )
+                : cloud
+                  ? 'The captured notebook is waiting in the private build queue.'
+                  : job.action === 'publish'
+                    ? 'Checking the configured Pages target before building or transferring images.'
+                    : 'Opening the saved notebook and preparing its files.'
               : 'Rendering pages, preparing assets, and checking the result.';
   return {
     steps,

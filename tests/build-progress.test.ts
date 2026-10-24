@@ -11,6 +11,22 @@ const job = (value: Partial<Job> = {}): Job => ({
   ...value,
 });
 describe('truthful build and publication progress', () => {
+  it('distinguishes hosted pipeline waiting from a local Pages preflight', () => {
+    const queued = job({
+      state: 'queued',
+      target: { canonicalUrl: 'https://example.test', project: 'glass-blog', branch: 'main' },
+    });
+    expect(buildProgress(queued, true)).toMatchObject({
+      label: 'Waiting for Studio pipeline',
+      detail:
+        'The captured notebook is waiting for its assigned Cloudflare build. No Pages upload has started.',
+      done: undefined,
+    });
+    expect(buildProgress(queued).label).toBe('Checking Pages project');
+    expect(buildProgress({ ...queued, state: 'uploading' }, true).label).toBe(
+      'Publishing to Pages',
+    );
+  });
   it('keeps phases without measured totals indeterminate and shows the configured delivery path', () => {
     for (const state of [
       'queued',

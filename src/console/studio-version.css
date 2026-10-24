@@ -1,4 +1,11 @@
-.studio-version {
+.studio-build-links {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+}
+.studio-version,
+.studio-repository {
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -13,12 +20,20 @@
   white-space: nowrap;
   cursor: pointer;
 }
-.studio-version:hover {
+.studio-repository {
+  justify-content: center;
+  width: 28px;
+  padding-inline: 0;
+  text-decoration: none;
+}
+.studio-version:hover,
+.studio-repository:hover {
   background: var(--control-hover);
   border-color: var(--control-border);
   color: var(--text);
 }
-.studio-version:focus-visible {
+.studio-version:focus-visible,
+.studio-repository:focus-visible {
   outline: 2px solid var(--accent-text);
   outline-offset: 3px;
 }
@@ -65,6 +80,9 @@
     gap: 2px;
     font-size: calc(9px * var(--font-scale));
   }
+  .studio-repository {
+    width: 24px;
+  }
   .studio-version > svg,
   .studio-version.has-revision .studio-version-number,
   .studio-version-divider {
@@ -72,11 +90,19 @@
   }
 }
 @media (max-width: 360px) {
+  .studio-topbar {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
   .studio-topbar .studio-breadcrumb {
-    display: grid;
-    grid-template-columns: auto;
-    justify-items: start;
-    gap: 2px;
+    display: flex;
+    flex: 1 0 100%;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .studio-topbar .topbar-actions {
+    flex: 1 1 100%;
+    justify-content: space-between;
   }
   .studio-topbar .studio-breadcrumb .sidebar-toggle {
     height: 26px;

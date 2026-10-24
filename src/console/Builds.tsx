@@ -510,7 +510,9 @@ export function Builds({
                         {job.action === 'build'
                           ? t('Not published')
                           : running
-                            ? t('Pending upload')
+                            ? isCloudStudio() && job.state === 'queued'
+                              ? t('Waiting for Studio pipeline')
+                              : t('Pending upload')
                             : t('URL not recorded')}
                       </small>
                     )}

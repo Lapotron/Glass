@@ -9,6 +9,7 @@ import {
   type BackupUpload,
 } from '../shared/backup-transfer.js';
 import type { RestoreReview } from '../engine/backup.js';
+import type { BackupImportProgress } from '../shared/backup-progress.js';
 import { api, ApiError, isCloudStudio, workspacePreferenceKey } from './api.js';
 import { ErrorBox, Field } from './components.js';
 
@@ -51,8 +52,11 @@ export function BackupImport({
     [pending, setPending] = useState(stored),
     [phase, setPhase] = useState<Phase>('idle'),
     [done, setDone] = useState(0),
+    [detail, setDetail] = useState<BackupImportProgress>(),
+    [elapsed, setElapsed] = useState(0),
     [error, setError] = useState('');
   const controller = useRef<AbortController>(null);
+  const started = useRef(0);
   const uploadedReview = useRef('');
   useEffect(() => {
     if (restored && restored === uploadedReview.current) void discard();
@@ -60,6 +64,11 @@ export function BackupImport({
   useEffect(() => {
     onBusy(phase === 'uploading' || phase === 'validating');
   }, [phase, onBusy]);
+  useEffect(() => {
+    if (phase !== 'uploading' && phase !== 'validating') return;
+    const timer = window.setInterval(() => setElapsed(performance.now() - started.current), 1000);
+    return () => window.clearInterval(timer);
+  }, [phase]);
   useEffect(
     () => () => {
       controller.current?.abort();
@@ -91,6 +100,10 @@ export function BackupImport({
     controller.current = abort;
     const options = { signal: abort.signal };
     setError('');
+    setDone(0);
+    setDetail(undefined);
+    setElapsed(0);
+    started.current = performance.now();
     setPhase('uploading');
     setFile(chosen);
     if (isCloudStudio()) {
@@ -98,13 +111,20 @@ export function BackupImport({
         const { importCloudBackup } = await import('./cloud-backup.js');
         const review = await importCloudBackup(chosen, {
           signal: abort.signal,
-          progress: (bytes) => setDone(bytes),
+          progress: (progress) => {
+            setDetail(progress);
+            setDone(progress.completedBytes);
+            setElapsed(performance.now() - started.current);
+            if (['checking', 'reviewing'].includes(progress.stage)) setPhase('validating');
+          },
         });
         onReview(review);
         uploadedReview.current = review.id;
+        setElapsed(performance.now() - started.current);
         setPhase('complete');
       } catch (error) {
         if ((error as Error).name !== 'AbortError') setError((error as Error).message);
+        setElapsed(performance.now() - started.current);
         setPhase('paused');
       }
       return;
@@ -181,6 +201,7 @@ export function BackupImport({
       });
       onReview(review);
       uploadedReview.current = review.id;
+      setElapsed(performance.now() - started.current);
       setPhase('complete');
     } catch (error) {
       if ((error as Error).name !== 'AbortError') setError((error as Error).message);
@@ -190,18 +211,22 @@ export function BackupImport({
           .then(setTransfer)
           .catch(() => {});
       setPhase('paused');
+      setElapsed(performance.now() - started.current);
     }
   }
   async function discard() {
     const id = transfer?.id || pending?.id;
-    if (!id) return;
+    if (!id && !isCloudStudio()) return;
     setError('');
     try {
-      await api('backups/uploads/' + id, { method: 'DELETE' });
+      if (isCloudStudio()) localStorage.removeItem(workspacePreferenceKey('native-backup-import'));
+      else await api('backups/uploads/' + id, { method: 'DELETE' });
       remember(null);
       setTransfer(undefined);
       setFile(undefined);
       setDone(0);
+      setDetail(undefined);
+      setElapsed(0);
       setPhase('idle');
       onReview(null);
       uploadedReview.current = '';
@@ -210,6 +235,44 @@ export function BackupImport({
     }
   }
   const active = phase === 'uploading' || phase === 'validating';
+  const cloud = isCloudStudio();
+  const total = cloud ? detail?.totalBytes || 0 : file?.size || transfer?.bytes || 0;
+  const ratio = total
+    ? done / total
+    : detail?.totalFiles
+      ? detail.completedFiles / detail.totalFiles
+      : 0;
+  const preparing = cloud && (!detail || detail.stage === 'preparing');
+  const indeterminate = active && (preparing || phase === 'validating');
+  const percent = phase === 'complete' ? 100 : Math.min(99, Math.floor(ratio * 100));
+  const status =
+    phase === 'complete'
+      ? t('Ready to review')
+      : phase === 'paused' || phase === 'idle'
+        ? t('Paused')
+        : detail?.stage === 'checking'
+          ? t('Verifying archive ending…')
+          : detail?.stage === 'reviewing'
+            ? t('Preparing restore review…')
+            : phase === 'validating'
+              ? t('Checking archive…')
+              : preparing
+                ? t('Reading archive…')
+                : cloud
+                  ? t('Checking and uploading…')
+                  : t('Uploading…');
+  const checking =
+    phase === 'validating' ||
+    detail?.stage === 'checking' ||
+    detail?.stage === 'reviewing' ||
+    (!cloud && transfer?.state === 'ready');
+  const step = phase === 'complete' ? 3 : checking ? 2 : preparing ? 0 : 1;
+  const duration = (ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  };
+  const rate = elapsed >= 2000 ? done / (elapsed / 1000) : 0;
+  const remaining = rate && elapsed >= 3000 && total > done ? ((total - done) / rate) * 1000 : 0;
   return (
     <div className="backup-import">
       <p className="help">
@@ -235,7 +298,11 @@ export function BackupImport({
       </Field>
       <ErrorBox error={error} />
       {(file || pending) && (
-        <div className="backup-transfer" aria-busy={active}>
+        <div
+          className={'backup-transfer' + (indeterminate ? ' is-indeterminate' : '')}
+          data-phase={phase}
+          aria-busy={active}
+        >
           <div className="backup-transfer-heading">
             <Icon
               name={
@@ -248,26 +315,92 @@ export function BackupImport({
               size={16}
             />
             <strong>{file?.name || t('Unfinished backup upload')}</strong>
-            <span>
-              {phase === 'validating'
-                ? t('Checking archive…')
-                : phase === 'complete'
-                  ? t('Ready to review')
-                  : phase === 'paused'
-                    ? t('Paused')
-                    : t('Uploading…')}
-            </span>
+            <span className="backup-transfer-percent">{indeterminate ? '—' : `${percent}%`}</span>
           </div>
-          <progress
-            aria-label={t('Backup upload progress')}
-            value={done}
-            max={file?.size || transfer?.bytes || 1}
-          />
-          <p className="help" aria-live="polite">
-            {file ? (
-              `${formatBytes(done)} / ${formatBytes(file.size)}`
-            ) : (
+          <div className="backup-transfer-meter">
+            <progress
+              aria-label={t('Backup upload progress')}
+              aria-valuetext={indeterminate ? status : `${percent}%`}
+              value={indeterminate ? undefined : percent / 100}
+              max={1}
+            />
+          </div>
+          <ol className="backup-transfer-stages" aria-label={t('Backup import stages')}>
+            {(
+              [
+                [t('Read archive'), 'Archive'],
+                [t('Check and transfer'), 'Upload'],
+                [t('Prepare review'), 'ShieldCheck'],
+              ] as const
+            ).map(([label, icon], index) => (
+              <li
+                key={label}
+                data-state={index < step ? 'done' : index === step ? 'active' : 'waiting'}
+              >
+                <Icon name={index < step ? 'Check' : icon} size={14} />
+                <span>{label}</span>
+              </li>
+            ))}
+          </ol>
+          <p className="backup-transfer-status" role="status">
+            {status}
+          </p>
+          {file && (
+            <dl className="backup-transfer-facts">
+              <div>
+                <dt>{cloud ? t('Confirmed data') : t('Archive transferred')}</dt>
+                <dd>
+                  {total || detail?.totalFiles
+                    ? `${formatBytes(done)} / ${formatBytes(total)}`
+                    : '—'}
+                </dd>
+              </div>
+              {detail && detail.totalFiles > 0 && (
+                <div>
+                  <dt>{t('Files checked')}</dt>
+                  <dd>
+                    {detail.completedFiles} / {detail.totalFiles}
+                  </dd>
+                </div>
+              )}
+              {detail && (
+                <>
+                  <div>
+                    <dt>{t('Uploaded this attempt')}</dt>
+                    <dd>{formatBytes(detail.uploadedBytes)}</dd>
+                  </div>
+                  <div>
+                    <dt>{t('Already stored')}</dt>
+                    <dd>{formatBytes(detail.reusedBytes)}</dd>
+                  </div>
+                </>
+              )}
+              <div>
+                <dt>{t('Elapsed')}</dt>
+                <dd>{duration(elapsed)}</dd>
+              </div>
+              <div>
+                <dt>{t('Processing speed')}</dt>
+                <dd>{rate && phase === 'uploading' ? `${formatBytes(rate)}/s` : '—'}</dd>
+              </div>
+            </dl>
+          )}
+          {detail?.currentFile && phase !== 'complete' && (
+            <p className="backup-transfer-file" title={detail.currentFile}>
+              <Icon name="FileText" size={13} />
+              <span>{detail.currentFile}</span>
+            </p>
+          )}
+          <p className="help">
+            {!file ? (
               <UiText message="Choose the original archive to resume your upload." />
+            ) : cloud ? (
+              t('Archive: {value0}. Transfer totals use expanded file data.', {
+                value0: formatBytes(file.size),
+              })
+            ) : null}
+            {remaining > 0 && phase === 'uploading' && (
+              <> · {t('About {value0} remaining', { value0: duration(remaining) })}</>
             )}
             {phase === 'validating' && (
               <>
@@ -305,7 +438,7 @@ export function BackupImport({
                 disabled={blocked}
                 onClick={() => void discard()}
               >
-                <UiText message="Discard upload" />
+                {cloud ? t('Forget import') : t('Discard upload')}
               </Button>
             )}
           </div>

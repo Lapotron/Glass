@@ -402,7 +402,7 @@
   height: 100%;
 }
 @media (max-width: 420px) {
-  .studio-breadcrumb > span,
+  .studio-breadcrumb > span:not(.studio-build-links),
   .build-button-label {
     display: none;
   }

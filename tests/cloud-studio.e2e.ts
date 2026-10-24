@@ -535,6 +535,7 @@ test('old saved JSON archives can be reviewed by the browser worker without CI',
   const createdAt = new Date().toISOString(),
     id = Date.now() + '-' + randomBytes(4).toString('hex'),
     name = 'Legacy browser compatibility.json.gz',
+    label = 'Legacy archive check — ' + test.info().project.name,
     archive = gzipSync(
       JSON.stringify({ format: 'fieldnotes-notebook', version: 2, createdAt, files: archiveFiles }),
     );
@@ -549,7 +550,7 @@ test('old saved JSON archives can be reviewed by the browser worker without CI',
       media: archiveFiles.filter((file) => file.path.startsWith('content/media/')).length,
       revisions: 0,
       bytes: archive.length,
-      label: 'Legacy archive check',
+      label,
     }),
   );
   const session = await mutate(request, 'cloud/migration', 'POST', { version: before.version }),
@@ -591,7 +592,7 @@ test('old saved JSON archives can be reviewed by the browser worker without CI',
   await page.goto('/#backups');
   await page
     .locator('.backup-list article')
-    .filter({ hasText: 'Legacy archive check' })
+    .filter({ hasText: label })
     .getByRole('button', { name: 'Review', exact: true })
     .click();
   await expect(page.getByText('Checksums verified', { exact: true })).toBeVisible({
@@ -650,6 +651,99 @@ test('captured backup restoration and reset recovery retain their reviewed sourc
   });
   await download.getByRole('button', { name: 'Close', exact: true }).click();
   await reset.getByRole('button', { name: 'Cancel', exact: true }).click();
+});
+
+test('backup transfer progress stays honest through pause, concurrent media upload and final review', async ({
+  page,
+  request,
+}) => {
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'glass-backup-progress-'));
+  let releaseUploads: () => void = () => {},
+    releaseReview: () => void = () => {};
+  const uploadGate = new Promise<void>((resolve) => {
+    releaseUploads = resolve;
+  });
+  const reviewGate = new Promise<void>((resolve) => {
+    releaseReview = resolve;
+  });
+  let held = 0,
+    holding = true,
+    reviewing = false,
+    parts = 0;
+  try {
+    await fs.cp('tests/fixtures/notebook', path.join(folder, 'content'), { recursive: true });
+    for (let i = 0; i < 12; i++)
+      await fs.writeFile(
+        path.join(folder, 'content/media', 'progress-' + i + '.bin'),
+        Buffer.alloc(65536, i),
+      );
+    await fs.writeFile(
+      path.join(folder, 'content/media/progress-large.bin'),
+      Buffer.alloc(17 * 1024 ** 2, 123),
+    );
+    const files = await indexBackupFiles(folder),
+      archive = path.join(folder, 'progress.tar.gz');
+    await createLargeBackup(folder, archive, files);
+    const before = await (await request.get('/api/cloud/status')).json();
+    await page.route(/\/api\/cloud\/migration\/[^/]+\/file\?/, async (route) => {
+      if (holding) {
+        held++;
+        await uploadGate;
+      }
+      await route.continue().catch(() => {});
+    });
+    await page.route('**/api/backups/import/review', async (route) => {
+      reviewing = true;
+      await reviewGate;
+      await route.continue();
+    });
+    page.on('request', (request) => {
+      if (/\/migration\/[^/]+\/uploads\/[^/]+\/parts\//.test(request.url())) parts++;
+    });
+    await page.goto('/#backups');
+    await page.getByLabel('Notebook backup', { exact: true }).setInputFiles(archive);
+    await expect.poll(() => held).toBe(3);
+    const panel = page.locator('.backup-transfer'),
+      meter = panel.getByRole('progressbar');
+    await expect(panel.getByText('Check and transfer', { exact: true })).toBeVisible();
+    await expect(meter).toHaveAttribute('max', '1');
+    expect(Number(await meter.getAttribute('value'))).toBeLessThan(1);
+    await panel.screenshot({ path: test.info().outputPath('backup-progress-light.png') });
+    await page.getByRole('button', { name: 'Pause upload', exact: true }).click();
+    await expect(panel.getByRole('status')).toHaveText('Paused');
+    holding = false;
+    releaseUploads();
+    await page.getByRole('button', { name: 'Toggle Studio appearance', exact: true }).click();
+    await panel.screenshot({ path: test.info().outputPath('backup-progress-dark.png') });
+    await page.setViewportSize({ width: 320, height: 920 });
+    await expect
+      .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1))
+      .toBe(true);
+    await panel.screenshot({ path: test.info().outputPath('backup-progress-mobile.png') });
+    await page.getByRole('button', { name: 'Resume upload', exact: true }).click();
+    await expect.poll(() => reviewing, { timeout: 60000 }).toBe(true);
+    await expect(panel.getByRole('status')).toHaveText('Preparing restore review…');
+    await expect(meter).not.toHaveAttribute('value');
+    await expect(panel.locator('.backup-transfer-percent')).not.toHaveText('100%');
+    releaseReview();
+    await expect(page.getByText('Checksums verified', { exact: true })).toBeVisible({
+      timeout: 60000,
+    });
+    await expect(panel.getByRole('status')).toHaveText('Ready to review');
+    await expect(meter).toHaveAttribute('value', '1');
+    await expect(
+      panel.getByText('Files checked', { exact: true }).locator('..').locator('dd'),
+    ).toHaveText(`${files.length} / ${files.length}`);
+    expect(parts).toBe(3);
+    expect((await (await request.get('/api/cloud/status')).json()).jobs).toEqual(before.jobs);
+    // Review only; neither the active fixture notebook nor the public deployment is changed.
+    await panel.getByRole('button', { name: 'Forget import', exact: true }).click();
+    await expect(panel).toHaveCount(0);
+  } finally {
+    releaseUploads();
+    releaseReview();
+    await fs.rm(folder, { recursive: true, force: true });
+  }
 });
 
 test('Hosting imports a large media file through private multipart R2 and verifies the resulting bytes', async ({

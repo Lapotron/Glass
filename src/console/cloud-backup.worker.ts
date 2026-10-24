@@ -1,11 +1,10 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
-import { archiveNotebookPath, notebookArchivePath } from '../shared/notebook-data.js';
-import { tarFile, iteratorStream, ArchiveReader } from '../shared/browser-archive.js';
-import { BACKUP_CHUNK_BYTES, type BackupUpload } from '../shared/backup-transfer.js';
+import { archiveNotebookPath } from '../shared/notebook-data.js';
+import { tarFile, iteratorStream } from '../shared/browser-archive.js';
+import { importBackup } from './backup-import-worker.js';
 type RecordFile = { path: string; sha: string; bytes: number; modified?: string };
 const encoder = new TextEncoder();
-const digest = (bytes: Uint8Array) => bytesToHex(sha256(bytes));
 let token = '';
 async function api(
   route: string,
@@ -204,199 +203,6 @@ async function exportBackup(input: any) {
     throw error;
   }
 }
-async function uploadFile(session: string, file: RecordFile, reader: ArchiveReader) {
-  const route = 'cloud/migration/' + session,
-    hash = sha256.create();
-  const linked = await api(route + '/link', 'POST', file);
-  let transfer: BackupUpload | undefined;
-  if (!linked.linked && file.bytes > BACKUP_CHUNK_BYTES)
-    transfer = await api(route + '/uploads', 'POST', {
-      name: file.path.split('/').at(-1),
-      bytes: file.bytes,
-      fingerprint: file.sha,
-      path: file.path,
-      sha: file.sha,
-      modified: file.modified,
-    });
-  const parts = new Map(transfer?.parts.map((part) => [part.part, part]));
-  for (let offset = 0, part = 1; offset < file.bytes; offset += BACKUP_CHUNK_BYTES, part++) {
-    const chunk = await reader.bytes(Math.min(BACKUP_CHUNK_BYTES, file.bytes - offset));
-    hash.update(chunk);
-    if (!linked.linked) {
-      if (transfer) {
-        const checksum = digest(chunk);
-        if (parts.has(part)) {
-          if (parts.get(part)!.sha256 !== checksum)
-            throw new Error('Archive differs from its uploaded parts.');
-        } else
-          await api(
-            route + '/uploads/' + transfer.id + '/parts/' + part,
-            'PUT',
-            new Blob([chunk]),
-            { 'Content-Type': 'application/octet-stream', 'X-Part-SHA256': checksum },
-          );
-      } else
-        await api(
-          route + '/file?' + new URLSearchParams({ path: file.path }),
-          'PUT',
-          new Blob([chunk]),
-          {
-            'Content-Type': 'application/octet-stream',
-            ...(file.modified ? { 'X-File-Modified': file.modified } : {}),
-          },
-        );
-    }
-    postMessage({ type: 'progress', bytes: reader.total });
-  }
-  if (bytesToHex(hash.digest()) !== file.sha)
-    throw new Error('Archive checksum failed: ' + file.path);
-  if (!file.bytes && !linked.linked)
-    await api(route + '/file?' + new URLSearchParams({ path: file.path }), 'PUT', new Blob([]), {
-      'Content-Type': 'application/octet-stream',
-    });
-  if (transfer) await api(route + '/uploads/' + transfer.id + '/complete', 'POST', {});
-}
-async function importBackup(input: any) {
-  const file = input.file as File | undefined;
-  const remote = file
-    ? undefined
-    : await fetch('/api/backups/' + encodeURIComponent(input.legacy.id) + '/download');
-  if (remote && !remote.ok) throw new Error('Saved backup archive is unavailable.');
-  const size = file?.size ?? input.legacy.bytes,
-    name = file?.name ?? input.legacy.name,
-    body = file?.stream() ?? remote?.body;
-  if (!body) throw new Error('Backup stream is unavailable.');
-  const session =
-    input.migration || (await api('cloud/migration', 'POST', { version: input.version }));
-  postMessage({ type: 'session', session });
-  let files: RecordFile[] = [];
-  const compressed = body.pipeThrough(new DecompressionStream('gzip')).getReader();
-  const initial: Uint8Array[] = [];
-  let first = '';
-  while (!first) {
-    const next = await compressed.read();
-    if (next.done) throw new Error('Empty backup archive.');
-    initial.push(next.value);
-    const prefix = await new Blob(initial as BlobPart[]).text();
-    first = prefix.trimStart()[0] || '';
-    if (prefix.length > 65536 && !first) throw new Error('Backup prefix is too large.');
-  }
-  const source = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      if (initial.length) {
-        controller.enqueue(initial.shift()!);
-        return;
-      }
-      try {
-        const next = await compressed.read();
-        if (next.done) controller.close();
-        else controller.enqueue(next.value);
-      } catch (error) {
-        controller.error(error);
-      }
-    },
-    cancel() {
-      return compressed.cancel();
-    },
-  });
-  if (first === '{') {
-    if (size > 128 * 1024 ** 2)
-      throw new Error(
-        'Compatibility archive exceeds 128 MiB compressed. Use a streaming .tar.gz archive.',
-      );
-    const chunks: Uint8Array[] = [];
-    // Compatibility archives contain base64 JSON; keep the old explicit size ceiling.
-    const stream = source.getReader();
-    let bytes = 0;
-    try {
-      for (;;) {
-        const next = await stream.read();
-        if (next.done) break;
-        bytes += next.value.length;
-        if (bytes > 384 * 1024 ** 2)
-          throw new Error(
-            'Compatibility archive exceeds 384 MiB. Use a streaming .tar.gz archive.',
-          );
-        chunks.push(next.value);
-      }
-    } finally {
-      stream.releaseLock();
-    }
-    const envelope = JSON.parse(await new Blob(chunks as BlobPart[]).text());
-    if (
-      envelope.format !== 'fieldnotes-notebook' ||
-      ![1, 2].includes(envelope.version) ||
-      !Array.isArray(envelope.files) ||
-      envelope.files.length > 10000
-    )
-      throw new Error('Invalid compatibility backup.');
-    for (const record of envelope.files) {
-      const path = notebookArchivePath(record.path),
-        value = Uint8Array.from(atob(record.data), (char) => char.charCodeAt(0));
-      if (digest(value) !== record.sha256) throw new Error('Archive checksum failed: ' + path);
-      const next = { path, sha: record.sha256, bytes: value.length };
-      files.push(next);
-      const source = new ArchiveReader(new Blob([value]).stream());
-      await uploadFile(session.id, next, source);
-      await source.close();
-    }
-  } else {
-    const reader = new ArchiveReader(source);
-    try {
-      const first = await reader.header();
-      if (first?.name !== 'manifest.json')
-        throw new Error('Archive must start with manifest.json.');
-      const manifest = JSON.parse(new TextDecoder().decode(await reader.bytes(first.size)));
-      await reader.padding(first.size);
-      if (
-        manifest.format !== 'fieldnotes-notebook' ||
-        manifest.version !== 3 ||
-        !Array.isArray(manifest.files) ||
-        manifest.files.length < 2 ||
-        manifest.files.length > 20000
-      )
-        throw new Error('Invalid streaming backup manifest.');
-      files = manifest.files.map((record: any) => ({
-        path: notebookArchivePath(record.path),
-        sha: record.sha256,
-        bytes: record.bytes,
-      }));
-      if (
-        new Set(files.map((file) => file.path)).size !== files.length ||
-        files.some(
-          (file) =>
-            !/^[a-f0-9]{64}$/.test(file.sha) ||
-            !Number.isSafeInteger(file.bytes) ||
-            file.bytes < 0 ||
-            file.bytes > 4 * 1024 ** 3,
-        ) ||
-        files.reduce((sum, file) => sum + file.bytes, 0) > 8 * 1024 ** 3
-      )
-        throw new Error('Invalid backup file index.');
-      const remaining = new Map(
-        files.map((record) => ['data/' + archiveNotebookPath(record.path), record]),
-      );
-      for (let index = 0; index < files.length; index++) {
-        const header = await reader.header();
-        const record = header && remaining.get(header.name);
-        if (!record || !header || header.size !== record.bytes)
-          throw new Error('Archive entries differ from their manifest.');
-        remaining.delete(header.name);
-        await uploadFile(session.id, record, reader);
-        await reader.padding(record.bytes);
-      }
-      if (await reader.header()) throw new Error('Archive has unexpected extra files.');
-    } finally {
-      await reader.close();
-    }
-  }
-  const review = await api('backups/import/review', 'POST', {
-    migration: session.id,
-    name,
-    files,
-  });
-  postMessage({ type: 'review', review });
-}
 self.onmessage = async (event: MessageEvent) => {
   token = event.data.token || '';
   try {
@@ -421,8 +227,10 @@ self.onmessage = async (event: MessageEvent) => {
       }
       postMessage({ type: 'hash', sha: bytesToHex(hash.digest()) });
     } else if (event.data.action === 'export') await exportBackup(event.data);
-    else if (event.data.action === 'import') await importBackup(event.data);
-    else if (event.data.action === 'cleanup') {
+    else if (event.data.action === 'import') {
+      const review = await importBackup(event.data, api, (message) => postMessage(message));
+      postMessage({ type: 'review', review });
+    } else if (event.data.action === 'cleanup') {
       const root = await navigator.storage.getDirectory();
       await root.removeEntry('glass-backup-' + event.data.session, { recursive: true });
       postMessage({ type: 'cleaned' });

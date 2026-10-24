@@ -166,12 +166,12 @@ export async function api<T = any>(url: string, options: ApiOptions = {}): Promi
       const { importCloudBackup } = await import('./cloud-backup.js');
       return importCloudBackup(data.legacyBackup, {
         signal: options.signal || new AbortController().signal,
-        progress: (bytes) =>
+        progress: (progress) =>
           options.onCloudProgress?.({
             id: data.legacyBackup.id,
-            state: 'checking',
-            bytes,
-            totalBytes: data.legacyBackup.bytes,
+            state: progress.stage,
+            bytes: progress.completedBytes,
+            totalBytes: progress.totalBytes,
           }),
       }) as Promise<T>;
     }

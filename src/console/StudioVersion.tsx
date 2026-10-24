@@ -18,32 +18,45 @@ export function StudioVersion() {
   const revision = build.commit?.slice(0, 7);
   return (
     <>
-      <button
-        type="button"
-        ref={trigger}
-        className={`studio-version${revision ? ' has-revision' : ''}`}
-        aria-label={t('Studio version: {version}', {
-          version: version + (revision ? ' · ' + revision : ''),
-        })}
-        title={t('Show build details')}
-        onClick={() => setOpen(true)}
-      >
-        <Icon name="GitBranch" size={12} />
-        <span className="studio-version-number">{version}</span>
-        {revision && (
-          <>
-            <span className="studio-version-divider" aria-hidden="true">
-              ·
+      <span className="studio-build-links">
+        <button
+          type="button"
+          ref={trigger}
+          className={`studio-version${revision ? ' has-revision' : ''}`}
+          aria-label={t('Studio version: {version}', {
+            version: version + (revision ? ' · ' + revision : ''),
+          })}
+          title={t('Show build details')}
+          onClick={() => setOpen(true)}
+        >
+          <Icon name="GitBranch" size={12} />
+          <span className="studio-version-number">{version}</span>
+          {revision && (
+            <>
+              <span className="studio-version-divider" aria-hidden="true">
+                ·
+              </span>
+              <code>{revision}</code>
+            </>
+          )}
+          {build.modified && (
+            <span className="studio-version-modified" aria-hidden="true">
+              *
             </span>
-            <code>{revision}</code>
-          </>
-        )}
-        {build.modified && (
-          <span className="studio-version-modified" aria-hidden="true">
-            *
-          </span>
-        )}
-      </button>
+          )}
+        </button>
+        <a
+          className="studio-repository"
+          href="https://github.com/Lapotron/Glass"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={t('Open Glass on GitHub')}
+          title={t('Open Glass on GitHub')}
+          data-ui-attrs={'{"aria-label":"Open Glass on GitHub","title":"Open Glass on GitHub"}'}
+        >
+          <Icon name="Github" size={15} />
+        </a>
+      </span>
       {open && (
         <Modal title={t('Studio version')} onClose={close} className="studio-version-dialog">
           <p className="help">
