@@ -37,7 +37,12 @@ export class ApiError extends Error {
     super(message);
   }
 }
-export async function api<T = any>(url: string, options: RequestInit = {}): Promise<T> {
+export type CloudJobProgress = { id: string; state: string };
+export type ApiOptions = RequestInit & {
+  onCloudProgress?: (progress: CloudJobProgress) => void;
+};
+export async function api<T = any>(url: string, options: ApiOptions = {}): Promise<T> {
+  const { onCloudProgress, ...requestOptions } = options;
   const form = options.body instanceof FormData;
   if (cloudRuntime && /^media\/(?:[a-f0-9-]+\/)?inspect$/.test(url)) {
     const { inspectCloudImage } = await import('./cloud-image.js');
@@ -69,7 +74,7 @@ export async function api<T = any>(url: string, options: RequestInit = {}): Prom
   const request = async (retrySession: boolean): Promise<T> => {
     const originalWorkspace = workspaceId;
     const response = await fetch(`/api/${url}`, {
-      ...options,
+      ...requestOptions,
       headers: {
         ...(form ? {} : { 'Content-Type': 'application/json' }),
         'X-Studio-Token': sessionToken,
@@ -117,6 +122,7 @@ export async function api<T = any>(url: string, options: RequestInit = {}): Prom
     }
     if (response.status === 202 && data.cloudJob) {
       const id = data.cloudJob;
+      onCloudProgress?.({ id, state: data.state || 'queued' });
       for (;;) {
         options.signal?.throwIfAborted();
         await new Promise<void>((resolve, reject) => {
@@ -131,6 +137,7 @@ export async function api<T = any>(url: string, options: RequestInit = {}): Prom
           options.signal?.addEventListener('abort', abort, { once: true });
         });
         const job = await api('cloud-jobs/' + id, { signal: options.signal });
+        onCloudProgress?.({ id, state: job.state });
         if (job.state === 'failed') throw new ApiError(job.error || 'Cloud job failed.', 400);
         if (job.state === 'succeeded') {
           const result = await api('cloud-jobs/' + id + '/result', { signal: options.signal });
@@ -161,8 +168,12 @@ export async function api<T = any>(url: string, options: RequestInit = {}): Prom
   };
   return request(true);
 }
-export const send = <T = any>(url: string, method: string, body: unknown) =>
-  api<T>(url, { method, body: JSON.stringify(body) });
+export const send = <T = any>(
+  url: string,
+  method: string,
+  body: unknown,
+  options: ApiOptions = {},
+) => api<T>(url, { ...options, method, body: JSON.stringify(body) });
 export const metadataOf = (entry: PublicEntry) => {
   const { body: _body, revision: _revision, kind: _kind, ...metadata } = entry;
   return metadata;

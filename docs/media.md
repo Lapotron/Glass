@@ -20,6 +20,8 @@ Every shared **Choose from your media** dialog includes an initially focused fil
 
 Every raster upload path uses ImagePreparation: Media library (including drops), Markdown insertion, covers, portraits, wallpaper, Life and chapter media pickers. Multiple files are reviewed in order. Canceling before upload does not retain a source. The author can skip editing, use a free or preset crop, drag the crop and eight handles, edit exact coordinates, reset, and resize proportionally. Numeric controls provide keyboard operation.
 
+Hosted preparation and attachment dialogs distinguish request transfer, queued cloud work and a running processor. Their Cloud operations link opens Hosting in another tab without discarding the selected file. A busy preparation dialog cannot be dismissed while its upload is settling. Actual job failure remains visible and never silently creates a second upload; see [hosted operation recovery](hosted-studio.md#cloud-operations-stay-queued).
+
 `POST /api/media/inspect` takes multipart `file` and returns an oriented, bounded WebP preview plus oriented source dimensions and an animation flag. It writes nothing. Use its source dimensions when converting percentages or pointer movement to integer crop pixels. Do not crop coordinates against the small preview's dimensions or the raw EXIF orientation.
 
 `POST /api/media` remains multipart `file`, with optional JSON `transform`:

@@ -1,6 +1,9 @@
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 beforeEach(() => vi.resetModules());
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), {
     status,
@@ -56,4 +59,45 @@ it('never retries a rejected write against a different notebook', async () => {
     message: expect.stringContaining('switched notebooks'),
   });
   expect(fetcher).toHaveBeenCalledTimes(3);
+});
+
+it('reports queued, running and completed upload states without sending callbacks over the network', async () => {
+  vi.useFakeTimers();
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(json({ cloudJob: 'upload-job', state: 'queued' }, 202))
+    .mockResolvedValueOnce(json({ state: 'running' }))
+    .mockResolvedValueOnce(json({ state: 'succeeded' }))
+    .mockResolvedValueOnce(json({ status: 201, body: { url: '/media/uploaded.webp' } }));
+  vi.stubGlobal('fetch', fetcher);
+  const { api } = await import('../src/console/api.js');
+  const progress = vi.fn();
+  const upload = api('media', { method: 'POST', onCloudProgress: progress });
+  await vi.advanceTimersByTimeAsync(0);
+  expect(progress).toHaveBeenLastCalledWith({ id: 'upload-job', state: 'queued' });
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(progress).toHaveBeenLastCalledWith({ id: 'upload-job', state: 'running' });
+  await vi.advanceTimersByTimeAsync(2000);
+  await expect(upload).resolves.toEqual({ url: '/media/uploaded.webp' });
+  expect(progress).toHaveBeenLastCalledWith({ id: 'upload-job', state: 'succeeded' });
+  expect(fetcher.mock.calls.every(([, options]) => !('onCloudProgress' in options))).toBe(true);
+  expect(fetcher.mock.calls.filter(([url]) => url === '/api/media')).toHaveLength(1);
+});
+
+it('reports a failed upload job and keeps its error instead of starting another upload', async () => {
+  vi.useFakeTimers();
+  const fetcher = vi
+    .fn()
+    .mockResolvedValueOnce(json({ cloudJob: 'upload-job', state: 'queued' }, 202))
+    .mockResolvedValueOnce(json({ state: 'failed', error: 'The captured build did not start.' }));
+  vi.stubGlobal('fetch', fetcher);
+  const { api } = await import('../src/console/api.js');
+  const progress = vi.fn();
+  const failure = expect(
+    api('media', { method: 'POST', onCloudProgress: progress }),
+  ).rejects.toMatchObject({ status: 400, message: 'The captured build did not start.' });
+  await vi.advanceTimersByTimeAsync(2000);
+  await failure;
+  expect(progress).toHaveBeenLastCalledWith({ id: 'upload-job', state: 'failed' });
+  expect(fetcher.mock.calls.filter(([url]) => url === '/api/media')).toHaveLength(1);
 });

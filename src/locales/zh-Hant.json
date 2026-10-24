@@ -3306,5 +3306,8 @@
   "” and open it in the editor.": "”並在編輯器中打開。",
   "” will be removed from the next build. Its Markdown file can be restored from Trash.": "”將從下次構建中移除。其 Markdown 檔案可從垃圾桶恢復。",
   "” with ": "”與“",
-  "中文 · Chinese": "中文 · Chinese"
+  "中文 · Chinese": "中文 · Chinese",
+  "Sending upload to your cloud Studio.": "正在將檔案傳送至你的雲端 Studio。",
+  "Waiting for Cloudflare to start this upload.": "正在等待 Cloudflare 開始處理此次上傳。",
+  "Cloudflare is processing this upload.": "Cloudflare 正在處理此次上傳。"
 }

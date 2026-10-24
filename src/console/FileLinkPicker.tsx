@@ -3,7 +3,8 @@ import { UiText } from '../shared/UiText.js';
 import { useEffect, useRef, useState } from 'react';
 import { Button, Icon } from '../shared/ui.js';
 import { attachmentAccept, attachmentFile, attachmentGroup } from '../shared/attachments.js';
-import { api, type MediaFile } from './api.js';
+import { api, type MediaFile, type CloudJobProgress } from './api.js';
+import { CloudUploadStatus } from './CloudUploadStatus.js';
 import { ErrorBox } from './components.js';
 export const attachmentTitle = (name: string) => name.replace(/-[a-f\d-]{36}(?=\.[^.]+$)/i, '');
 export function FileLinkPicker({
@@ -16,6 +17,7 @@ export function FileLinkPicker({
   const [files, setFiles] = useState<MediaFile[]>([]),
     [loading, setLoading] = useState(true),
     [uploading, setUploading] = useState(false),
+    [cloudProgress, setCloudProgress] = useState<CloudJobProgress>(),
     [error, setError] = useState('');
   const [query, setQuery] = useState(''),
     [group, setGroup] = useState('All files'),
@@ -59,10 +61,15 @@ export function FileLinkPicker({
       return;
     }
     setUploading(true);
+    setCloudProgress(undefined);
     try {
       const form = new FormData();
       form.append('file', file);
-      const result = await api<MediaFile>('media', { method: 'POST', body: form });
+      const result = await api<MediaFile>('media', {
+        method: 'POST',
+        body: form,
+        onCloudProgress: setCloudProgress,
+      });
       if (!alive.current) return;
       setFiles((previous) => [result, ...previous]);
       setQuery('');
@@ -85,6 +92,7 @@ export function FileLinkPicker({
   return (
     <div className="file-link-picker">
       <ErrorBox error={error} />
+      <CloudUploadStatus progress={cloudProgress} pending={uploading} />
       <p
         className="help"
         data-ui={

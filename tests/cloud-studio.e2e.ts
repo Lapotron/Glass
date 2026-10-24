@@ -239,6 +239,51 @@ test('homepage and About previews load an unpublished private portrait without b
   const aboutImage = page.frameLocator('iframe[title="About preview"]').locator('.about-portrait');
   await expect(aboutImage).toHaveJSProperty('naturalWidth', 192, { timeout: 60000 });
 });
+test('hosted media file picker prepares an image and uploads both images and PDF attachments through CI', async ({
+  page,
+  request,
+}) => {
+  await page.goto('/#media');
+  const input = page.getByLabel('Upload media files', { exact: true });
+  const name = 'hosted-picker-' + test.info().project.name;
+  await input.setInputFiles({
+    name: name + '.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAMAAAADAAQMAAABoEv5EAAAAA1BMVEVGcowqahjXAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHElEQVRYw+3BMQEAAADCoPVPbQ0PoAAAAADg1wASwAABCP6fUgAAAABJRU5ErkJggg==',
+      'base64',
+    ),
+  });
+  const image = page.getByRole('dialog', { name: 'Prepare image', exact: true });
+  await expect(image).toBeVisible();
+  const apply = image.getByRole('button', { name: 'Apply & upload', exact: true });
+  await expect(apply).toBeEnabled({ timeout: 60000 });
+  await apply.click();
+  await expect(image.getByRole('status', { name: 'Cloud operation', exact: true })).toBeVisible();
+  await expect(image.getByRole('link', { name: 'Cloud operations', exact: true })).toHaveAttribute(
+    'href',
+    '#hosting',
+  );
+  await expect(image).not.toBeVisible({ timeout: 90000 });
+  const files = await (await request.get('/api/media')).json();
+  const uploaded = files.find(
+    (file: any) => file.name.startsWith(name) && file.name.endsWith('.webp'),
+  );
+  expect(uploaded).toMatchObject({ width: 192, height: 192 });
+  expect((await request.get(uploaded.url)).ok()).toBe(true);
+  const pdf = Buffer.from('%PDF-1.7\nA private hosted upload fixture.\n%%EOF');
+  await input.setInputFiles({ name: name + '.pdf', mimeType: 'application/pdf', buffer: pdf });
+  const attachment = page.getByRole('dialog', { name: 'Prepare image', exact: true });
+  await expect(attachment).toBeVisible();
+  await attachment.getByRole('button', { name: 'Upload PDF', exact: true }).click();
+  await expect(attachment).not.toBeVisible({ timeout: 90000 });
+  const attachments = await (await request.get('/api/media')).json();
+  const uploadedPdf = attachments.find(
+    (file: any) => file.name.startsWith(name) && file.name.endsWith('.pdf'),
+  );
+  expect(uploadedPdf).toBeTruthy();
+  expect(await (await request.get(uploadedPdf.url)).body()).toEqual(pdf);
+});
 test('hosting shows private storage and a queued backup completes through the cloud CI bridge', async ({
   page,
   request,

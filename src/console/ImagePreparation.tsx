@@ -2,7 +2,8 @@ import { t } from '../shared/i18n.js';
 import { UiText } from '../shared/UiText.js';
 import { useEffect, useRef, useState, type PointerEvent } from 'react';
 import { Button, Icon } from '../shared/ui.js';
-import { api, send, type MediaFile } from './api.js';
+import { api, send, type MediaFile, type CloudJobProgress } from './api.js';
+import { CloudUploadStatus } from './CloudUploadStatus.js';
 import { Modal, Field, ErrorBox } from './components.js';
 import type { ImageTransform } from '../engine/media.js';
 type Inspection = { width: number; height: number; animated: boolean; preview: string };
@@ -26,6 +27,7 @@ export function ImagePreparation({
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false),
     [error, setError] = useState(''),
+    [cloudProgress, setCloudProgress] = useState<CloudJobProgress>(),
     [retry, setRetry] = useState(0);
   const file = files[index],
     pdf = file?.type === 'application/pdf';
@@ -34,6 +36,7 @@ export function ImagePreparation({
   useEffect(() => {
     setInspection(null);
     setError('');
+    setCloudProgress(undefined);
     setRatio('free');
     if (pdf) return;
     const controller = new AbortController();
@@ -41,8 +44,8 @@ export function ImagePreparation({
     const form = new FormData();
     if (file) form.set('file', file);
     const request = source?.sourceId
-      ? api<Inspection>(`media/${source.sourceId}/inspect`, { signal: controller.signal })
-      : api<Inspection>('media/inspect', { method: 'POST', body: form, signal: controller.signal });
+      ? api<Inspection>(`media/${source.sourceId}/inspect`, { signal: controller.signal, onCloudProgress: setCloudProgress })
+      : api<Inspection>('media/inspect', { method: 'POST', body: form, signal: controller.signal, onCloudProgress: setCloudProgress });
     void request
       .then((data) => {
         setInspection(data);
@@ -139,17 +142,18 @@ export function ImagePreparation({
   async function upload(skip = false) {
     setBusy(true);
     setError('');
+    setCloudProgress(undefined);
     try {
       const transform: ImageTransform =
         skip || pdf ? {} : { ...(inspection?.animated ? {} : { crop }), resize: size };
       let result: MediaFile;
       if (source?.sourceId)
-        result = await send<MediaFile>(`media/${source.sourceId}/variants`, 'POST', { transform });
+        result = await send<MediaFile>(`media/${source.sourceId}/variants`, 'POST', { transform }, { onCloudProgress: setCloudProgress });
       else {
         const form = new FormData();
         form.set('file', file);
         form.set('transform', JSON.stringify(transform));
-        result = await api<MediaFile>('media', { method: 'POST', body: form });
+        result = await api<MediaFile>('media', { method: 'POST', body: form, onCloudProgress: setCloudProgress });
       }
       onUploaded(result);
       if (index + 1 < files.length) setIndex(index + 1);
@@ -178,6 +182,7 @@ export function ImagePreparation({
       title={source ? t("Edit image") : t("Prepare image")}
       wide
       className="image-preparation"
+      dismissible={!busy}
       onClose={() => {
         if (!busy) onClose();
       }}
@@ -217,6 +222,7 @@ export function ImagePreparation({
         </small>
       </div>
       <ErrorBox error={error} />
+      <CloudUploadStatus progress={cloudProgress} pending={busy} />
       {error && !inspection && !pdf && (
         <Button icon="RotateCcw" onClick={() => setRetry((r) => r + 1)}>
           <UiText message={"Retry preview"}/></Button>
