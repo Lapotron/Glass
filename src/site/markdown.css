@@ -1,0 +1,269 @@
+/* One uninterrupted reading surface; details are typographic, not generated cards. */
+:root .article-body > h2 {
+  padding-bottom: 0.45em;
+  border-bottom: 1px solid var(--line);
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+:root .article-body > h3 {
+  letter-spacing: -0.025em;
+  text-wrap: balance;
+}
+:root .article-body :is(strong, b) {
+  font-weight: 650;
+}
+:root .prose :is(ul, ol) {
+  margin-top: 0.7em;
+}
+:root .prose li::marker {
+  color: var(--accent-text);
+  font-variant-numeric: tabular-nums;
+}
+:root .prose :is(ul, ol) :is(ul, ol) {
+  margin-bottom: 0.7em;
+}
+:root .prose blockquote {
+  border-left-width: 2px;
+  background: linear-gradient(100deg, var(--accent-soft), transparent);
+  border-radius: 0 12px 12px 0;
+  padding: 8px 24px;
+  font-style: italic;
+}
+:root .prose hr {
+  height: 1px;
+  border: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--accent) 28%, var(--line)),
+    transparent
+  );
+  margin: 2.5em 0;
+}
+:root .prose :not(pre) > code {
+  border: 1px solid var(--line);
+  background: var(--inset-bg);
+  padding: 0.12em 0.4em;
+  border-radius: 6px;
+  overflow-wrap: anywhere;
+}
+:root .prose .code-block {
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+}
+:root .prose .code-toolbar {
+  background: var(--inset-bg);
+}
+/* Booktabs rules preserve semantic tables and GFM column alignment. */
+.prose-table-scroll {
+  max-width: 100%;
+  overflow: auto;
+  margin: 1.5em 0;
+  outline-offset: 4px;
+}
+:root .prose table {
+  display: table;
+  width: 100%;
+  margin: 0;
+  border-collapse: collapse;
+  border-top: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  font-size: 0.86em;
+  font-variant-numeric: tabular-nums;
+  background: transparent;
+}
+:root .prose :is(th, td) {
+  padding: 0.65em 1.1em;
+  border: 0;
+  background: transparent;
+  text-align: start;
+  line-height: 1.7;
+}
+:root .prose th {
+  font-weight: 600;
+  color: var(--heading);
+}
+:root .prose thead {
+  border-bottom: 1px solid var(--line);
+}
+:root .prose [align='right'] {
+  text-align: right;
+}
+:root .prose [align='center'] {
+  text-align: center;
+}
+:root .prose :is(th, td):first-child {
+  padding-inline-start: 0.35em;
+}
+:root .prose :is(th, td):last-child {
+  padding-inline-end: 0.35em;
+}
+:root .prose tbody tr:hover {
+  background: transparent;
+}
+:root .prose a {
+  text-decoration-thickness: 1px;
+  text-underline-offset: 0.2em;
+}
+:root .prose a:focus-visible {
+  border-radius: 3px;
+}
+:root .prose img {
+  box-shadow: 0 8px 28px #132c4512;
+}
+:root .prose > details {
+  padding: 16px 0;
+  background: transparent;
+  border: 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+}
+:root .prose > details > summary {
+  font-weight: 550;
+  color: var(--accent-text);
+}
+:root .prose > details[open] > summary {
+  margin-bottom: 14px;
+}
+:root .article-body :is(.interactive, .diagram) {
+  font-family: var(--font);
+}
+:root .article-body[data-code-lines='true'] pre code {
+  counter-reset: code-line;
+}
+:root .article-body[data-code-lines='true'] pre .line::before {
+  counter-increment: code-line;
+  content: counter(code-line);
+  display: inline-block;
+  width: 2em;
+  margin-right: 1.25em;
+  text-align: right;
+  color: var(--faint);
+  user-select: none;
+}
+.article-related {
+  margin-top: 48px;
+}
+.article-discussion {
+  margin-top: 36px;
+  padding: 28px;
+  scroll-margin-top: 120px;
+}
+.article-discussion-jump {
+  margin-top: 16px;
+  color: var(--accent-text);
+}
+.discussion-metadata {
+  margin: 18px 0 0;
+  font-size: calc(12px * var(--font-scale));
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.discussion-status {
+  min-height: 1.6em;
+  margin: 14px 0 8px;
+}
+.discussion-copy {
+  border: 0;
+  background: transparent;
+  padding: 4px 0;
+  cursor: pointer;
+}
+.article-discussion .giscus {
+  margin-top: 16px;
+}
+.article-discussion .giscus:empty {
+  display: none;
+}
+[data-discussion-state='unavailable'] > .discussion-status {
+  color: var(--danger);
+}
+[data-discussion-state='locked'] > .discussion-status {
+  color: var(--muted);
+}
+giscus-widget {
+  display: block;
+  width: 100%;
+  background: transparent;
+  color-scheme: inherit;
+}
+giscus-widget::part(iframe) {
+  border-radius: 12px;
+  background: transparent;
+  /* Match both SDK layers to the page so dark canvases stay transparent. */
+  color-scheme: inherit;
+}
+.discussion-heading {
+  display: flex;
+  align-items: center;
+  gap: 13px;
+}
+.discussion-heading h2 {
+  font-size: calc(20px * var(--font-scale));
+  margin: 0;
+}
+.discussion-heading p {
+  font-size: calc(12px * var(--font-scale));
+  color: var(--muted);
+  margin: 5px 0 0;
+}
+.discussion-actions {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+.newsletter-invitation {
+  max-width: var(--content-width);
+  margin: 0 auto 35px;
+  padding: 26px 30px;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.newsletter-invitation > div {
+  flex: 1;
+}
+.newsletter-invitation h2 {
+  font-size: calc(21px * var(--font-scale));
+  margin: 0 0 5px;
+}
+.newsletter-invitation p {
+  font-size: calc(12px * var(--font-scale));
+  color: var(--muted);
+  margin: 0;
+}
+@media (max-width: 680px) {
+  .article-discussion {
+    padding: 22px;
+  }
+  .newsletter-invitation {
+    margin: 0 21px 25px;
+    padding: 22px;
+    flex-wrap: wrap;
+  }
+  .newsletter-invitation .button {
+    margin-left: 52px;
+  }
+}
+.article-related > h2 {
+  font-size: calc(21px * var(--font-scale));
+  font-weight: 550;
+  margin-bottom: 20px;
+}
+.related-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+@media (max-width: 680px) {
+  .related-grid {
+    grid-template-columns: 1fr;
+  }
+  :root .prose blockquote {
+    padding-left: 18px;
+  }
+}

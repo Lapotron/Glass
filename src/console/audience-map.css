@@ -1,0 +1,102 @@
+.aca-osm {
+  margin: 16px 0;
+  min-width: 0;
+}
+.aca-osm-stage {
+  height: clamp(340px, 43vw, 520px);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: var(--inset-bg);
+  isolation: isolate;
+  font-family: var(--sans);
+}
+.aca-osm-stage:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 3px;
+}
+.aca-osm-stage .leaflet-control-zoom {
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--control-shadow);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.aca-osm-stage .leaflet-control-zoom a {
+  width: 34px;
+  height: 34px;
+  line-height: 34px;
+  background: var(--surface-solid);
+  color: var(--text);
+  border-color: var(--line);
+}
+.aca-osm-stage .leaflet-control-zoom a:hover {
+  background: var(--control-hover);
+  color: var(--text);
+}
+.aca-osm-stage .leaflet-control-attribution {
+  max-width: calc(100% - 16px);
+  background: var(--surface-solid);
+  color: var(--muted);
+  padding: 3px 8px;
+  border-radius: 8px 0 0;
+  font-size: 10px;
+}
+.aca-osm-stage .leaflet-control-attribution a {
+  color: var(--link-text);
+}
+.aca-osm-stage .aca-map-marker {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--accent-contrast, #fff);
+  background: var(--accent);
+  border: 2px solid var(--surface-solid);
+  box-shadow: 0 3px 14px #12344740;
+  font-family: var(--sans);
+  cursor: pointer;
+}
+.aca-osm-stage .aca-map-marker:focus-visible {
+  outline: 3px solid var(--text);
+  outline-offset: 3px;
+}
+.aca-map-marker-value {
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.aca-osm-stage .aca-map-marker.is-cluster {
+  box-shadow:
+    0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent),
+    0 3px 14px #12344740;
+}
+.aca-osm-stage .aca-map-tooltip {
+  color: var(--text);
+  background: var(--surface-solid);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--control-shadow);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.aca-map-tooltip strong,
+.aca-map-tooltip span {
+  display: block;
+}
+.aca-map-tooltip span {
+  color: var(--muted);
+  margin-top: 3px;
+}
+.aca-map-note {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.7;
+  margin: 10px 2px 0;
+}
+html[data-theme='dark'] .aca-osm-stage .leaflet-tile-pane {
+  filter: brightness(0.72) saturate(0.7);
+}
+@media (max-width: 480px) {
+  .aca-osm-stage {
+    border-radius: 14px;
+    height: 340px;
+  }
+}

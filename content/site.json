@@ -1,0 +1,282 @@
+{
+  "mediaProtection": {
+    "discourageIndexing": true,
+    "blockForeignEmbeds": false,
+    "allowedHosts": []
+  },
+  "version": 1,
+  "name": "Glass",
+  "url": "https://example.com",
+  "description": "An open notebook for curious minds. Essays, small experiments, and moments worth keeping.",
+  "language": "en",
+  "localization": {
+    "enabled": true,
+    "labels": {}
+  },
+  "collections": {
+    "posts": {
+      "name": "Writing",
+      "singular": "Entry",
+      "path": "blog",
+      "aliases": []
+    },
+    "lab": {
+      "name": "Lab",
+      "singular": "Experiment",
+      "path": "lab",
+      "aliases": []
+    },
+    "life": {
+      "name": "Life",
+      "singular": "Moment",
+      "path": "life",
+      "aliases": []
+    }
+  },
+  "branding": {
+    "shortName": "",
+    "logo": "",
+    "darkLogo": "",
+    "showName": true,
+    "namePeriod": true,
+    "favicon": "",
+    "iconStyle": "book",
+    "monogram": "",
+    "iconBackground": "#3868e8",
+    "themeColorLight": "#f5f6f9",
+    "themeColorDark": "#131c2b",
+    "appBackground": "#f5f6f9",
+    "appDisplay": "browser"
+  },
+  "metadata": {
+    "homeTitle": "",
+    "titleTemplate": "{title} — {site}",
+    "locale": "",
+    "socialImage": "",
+    "socialImageAlt": "",
+    "twitterSite": "",
+    "twitterCreator": "",
+    "twitterCard": "auto",
+    "indexing": true,
+    "followLinks": true,
+    "sitemap": true,
+    "maxImagePreview": "large",
+    "structuredData": true,
+    "author": true,
+    "googleVerification": "",
+    "bingVerification": ""
+  },
+  "navigationTools": {
+    "tools": true,
+    "search": true,
+    "themeToggle": true,
+    "readerSettings": true
+  },
+  "footer": {
+    "tagline": "A little space for things that matter.",
+    "copyrightName": "",
+    "since": 0,
+    "showBrand": true,
+    "showSocialLinks": true,
+    "socialLinkLimit": 2,
+    "showFeeds": true,
+    "externalLinks": true,
+    "links": []
+  },
+  "feeds": {
+    "rss": true,
+    "atom": false,
+    "json": false,
+    "title": "",
+    "description": "",
+    "limit": 50,
+    "posts": true,
+    "lab": true,
+    "author": true
+  },
+  "profile": {
+    "name": "Writer",
+    "role": "Learning, making & paying attention",
+    "headline": "A curious mind.\nAn open notebook.",
+    "bio": "A personal space for ideas in progress, small experiments, and moments worth keeping. I write to understand things a little better — and share what I find along the way.",
+    "email": "",
+    "protectEmailLinks": true,
+    "portrait": "/media/profile.svg",
+    "location": "Somewhere with a good view",
+    "links": [
+      {
+        "label": "GitHub",
+        "href": "https://github.com/example"
+      },
+      {
+        "label": "Email",
+        "href": "mailto:writer@example.org"
+      }
+    ],
+    "affiliations": []
+  },
+  "navigation": [
+    {
+      "label": "Home",
+      "href": "/"
+    },
+    {
+      "label": "Archive",
+      "href": "/archive/"
+    },
+    {
+      "label": "Life",
+      "href": "/life/"
+    },
+    {
+      "label": "About",
+      "href": "/about/"
+    }
+  ],
+  "homeSections": [
+    "blog",
+    "lab",
+    "life",
+    "archive"
+  ],
+  "home": {
+    "layout": "profile",
+    "motion": "subtle",
+    "profile": {
+      "showPortrait": true,
+      "showRole": true,
+      "showLocation": true,
+      "showAffiliations": false,
+      "showLinks": true
+    },
+    "recent": {
+      "sources": [
+        "posts",
+        "lab"
+      ],
+      "limit": 6,
+      "showSummary": true,
+      "showDate": true,
+      "showCover": false
+    },
+    "pinned": [],
+    "slides": null
+  },
+  "theme": {
+    "contrast": {
+      "preset": "balanced",
+      "readingTarget": 7,
+      "interfaceTarget": 4.5,
+      "automatic": true,
+      "glassFloor": 0.58,
+      "readingFloor": 0.68,
+      "colors": {
+        "light": {},
+        "dark": {}
+      }
+    },
+    "appearance": "light",
+    "accent": "#3868e8",
+    "background": "sky",
+    "backgroundImage": "",
+    "fontScale": 1,
+    "textScale": 1,
+    "focusMode": false,
+    "contentWidth": 1200,
+    "glass": 0.5,
+    "reduceTransparency": false,
+    "fontFamily": "system",
+    "articleWidth": 864,
+    "lineHeight": 1.85,
+    "paragraphSpace": 1.35,
+    "cornerRadius": 23,
+    "glassBlur": 16,
+    "glassOpacity": 0.3,
+    "glassSaturation": 100,
+    "readingOpacity": 0.86,
+    "wallpaperBlur": 6,
+    "wallpaperDim": 0.35,
+    "wallpaperWash": "auto",
+    "wallpaperPosition": "center",
+    "ambientIntensity": 0.7,
+    "reduceMotion": false
+  },
+  "about": {
+    "guestbook": {
+      "enabled": false,
+      "title": "Leave a note.",
+      "description": "A hello, a question, or something worth sharing."
+    }
+  },
+  "reading": {
+    "outline": true,
+    "progress": true,
+    "readingTime": true,
+    "publishedDate": true,
+    "articleFooter": true,
+    "author": true,
+    "relatedCount": 2,
+    "codeLineNumbers": true
+  },
+  "publishing": {
+    "scheduleEnabled": false,
+    "scheduleAction": "build"
+  },
+  "integrations": {
+    "aca": {
+      "enabled": false,
+      "endpoint": "",
+      "siteId": "",
+      "collectInteractions": true,
+      "collectVitals": true,
+      "dailyNetworkEstimates": false,
+      "collectAudience": true,
+      "optionalHistory": false
+    },
+    "analytics": {
+      "enabled": false,
+      "mode": "manual",
+      "token": "",
+      "respectPrivacy": true
+    },
+    "googleAnalytics": {
+      "enabled": false,
+      "measurementId": "",
+      "respectPrivacy": true,
+      "debugMode": false
+    },
+    "comments": {
+      "enabled": false,
+      "repo": "",
+      "repoId": "",
+      "category": "General",
+      "categoryId": "",
+      "reactions": false,
+      "onDemand": false,
+      "language": "auto",
+      "inputPosition": "top",
+      "showMetadata": true,
+      "theme": "site",
+      "title": "A conversation, continued.",
+      "description": "Questions, notes, and a different point of view."
+    },
+    "newsletter": {
+      "enabled": false,
+      "url": "",
+      "title": "A note, now and then.",
+      "description": "New writing and small discoveries, delivered at a quieter pace.",
+      "buttonLabel": "Subscribe"
+    }
+  },
+  "mediaDelivery": {
+    "mode": "pages",
+    "bucket": "",
+    "publicOrigin": "",
+    "prefix": "media"
+  },
+  "cloudflare": {
+    "accountId": "",
+    "projectName": "glass-site",
+    "productionBranch": "main"
+  }
+}

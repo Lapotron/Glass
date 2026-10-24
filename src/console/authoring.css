@@ -1,0 +1,183 @@
+.code-editor-wrap {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  container: markdown-editor / inline-size;
+}
+.editor-assistance {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-bottom: 1px solid var(--line);
+  padding: 8px 10px;
+  background: var(--inset-bg);
+}
+.editor-assistance button.text-link {
+  gap: 6px;
+  min-height: 32px;
+  border-radius: 9px;
+  font-size: calc(11px * var(--font-scale));
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+.editor-assistance button.text-link:first-child {
+  color: var(--text);
+}
+.editor-assistance button.text-link:first-child > svg {
+  color: var(--accent-text);
+}
+.editor-syntax-status[data-state='valid'] > svg {
+  color: var(--success);
+}
+.editor-syntax-status[data-state='issues'] {
+  color: var(--warning);
+}
+.editor-assistance kbd {
+  padding: 2px 4px;
+  margin-inline-start: 3px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  background: var(--hover);
+  font: calc(9px * var(--font-scale)) var(--mono);
+  color: var(--muted);
+}
+.editor-assistance select {
+  width: calc(116px * var(--font-scale));
+  max-width: 100%;
+  padding: 5px 28px 5px 9px;
+  font-size: calc(11px * var(--font-scale));
+  border-radius: 9px;
+  min-height: 32px;
+  background-position: right 9px center;
+  background-size: 10px 7px;
+}
+.editor-assistance > :last-child {
+  margin-inline-start: auto;
+}
+@container markdown-editor (max-width: 440px) {
+  .editor-assistance kbd {
+    display: none;
+  }
+}
+@container markdown-editor (max-width: 360px) {
+  .editor-assistance {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .editor-assistance select {
+    width: 100%;
+  }
+  .editor-assistance > :last-child {
+    grid-column: 1 / -1;
+    justify-self: start;
+    margin-inline-start: 0;
+  }
+}
+.editor-tool-error {
+  margin: 0;
+  padding: 8px 16px;
+  color: var(--danger);
+  font-size: calc(11px * var(--font-scale));
+}
+.code-editor .cm-tooltip {
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  background: rgb(var(--material-tint) / 0.97);
+  color: var(--text);
+  box-shadow: var(--shadow-small);
+  font: calc(12px * var(--font-scale))/1.6 var(--font);
+  overflow: hidden;
+}
+.code-editor .cm-tooltip-autocomplete ul {
+  max-width: min(560px, 85vw);
+  font-family: var(--font);
+  padding: 5px;
+}
+.code-editor .cm-tooltip-autocomplete ul li {
+  border-radius: 7px;
+  padding: 5px 8px;
+}
+.code-editor .cm-tooltip-autocomplete ul li[aria-selected] {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.code-editor .cm-completionDetail {
+  color: var(--muted);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-style: normal;
+}
+.code-editor .cm-tooltip.cm-completionInfo {
+  padding: 12px;
+}
+.code-editor .cm-panels {
+  background: var(--inset-bg);
+  color: var(--text);
+  border-color: var(--line);
+  font: calc(12px * var(--font-scale))/1.7 var(--font);
+  max-height: 170px;
+  overflow: auto;
+}
+.code-editor .cm-panel-lint ul [aria-selected] {
+  background: var(--accent-soft);
+}
+.code-editor .cm-diagnostic {
+  border-color: var(--line);
+}
+.component-search {
+  margin-bottom: 16px;
+}
+.composer-types {
+  max-height: 180px;
+  overflow: auto;
+  padding: 2px 2px 8px;
+}
+.chart-data-actions,
+.chart-option-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.chart-data-actions .muted {
+  font-size: calc(11px * var(--font-scale));
+}
+.chart-option-toggles .check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: calc(12px * var(--font-scale));
+}
+.chart-json {
+  font: calc(12px * var(--font-scale))/1.7 var(--mono);
+  tab-size: 2;
+}
+.chart-axis-fields {
+  margin: 16px 0;
+  padding: 14px 0;
+  border-block: 1px solid var(--line);
+}
+.chart-axis-fields > summary {
+  color: var(--accent-text);
+  font-weight: 550;
+  cursor: pointer;
+  margin-bottom: 12px;
+}
+@media (max-width: 600px) {
+  .editor-assistance {
+    padding: 6px 10px;
+    gap: 8px;
+  }
+  .editor-assistance kbd {
+    display: none;
+  }
+  .code-editor .cm-completionDetail {
+    max-width: 110px;
+  }
+}

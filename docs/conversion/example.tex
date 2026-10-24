@@ -1,0 +1,12 @@
+\section{A bounded error}
+The estimate follows from Theorem~\ref{thm-bound}; see Table~\ref{tab-error}.
+\begin{theorem}\label{thm-bound}
+For $0\le x\le1$, $x^2\le x$.
+\end{theorem}
+\begin{proof}Multiply $x\le1$ by the nonnegative value $x$.\end{proof}
+\begin{equation}\label{eq-error}e(x)=x-x^2\end{equation}
+\begin{table}\caption{Exact error}\label{tab-error}
+\begin{tabular}{lr}\toprule $x$ & $e(x)$ \\ \midrule
+0 & 0 \\ 0.5 & 0.25 \\ 1 & 0 \\ \bottomrule\end{tabular}
+\end{table}
+For background, consult the author's supplied reference~\cite{course-notes}.

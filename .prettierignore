@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.studio/
+.wrangler/
+test-results/
+playwright-report/
+package-lock.json
+# Authoring files keep the formatting saved by Studio or the author's text editor.
+content/
+
+# The generic Markdown formatter does not understand the authoring directive grammar.
+tests/fixtures/**/*.md
+docs/authoring-templates/
+docs/conversion/example.md
+docs/markdown-reference.md

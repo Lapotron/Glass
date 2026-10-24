@@ -1,0 +1,163 @@
+.hosting-page {
+  max-width: 1280px;
+}
+.hosting-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+.hosting-section {
+  padding: 24px;
+  min-width: 0;
+}
+.hosting-section h2 {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 18px;
+  font-size: 17px;
+}
+.hosting-section h2 svg {
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.hosting-section p {
+  line-height: 1.65;
+}
+.hosting-facts {
+  margin: 0;
+}
+.hosting-facts > div {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.7fr) minmax(0, 1.4fr);
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.hosting-facts dt {
+  color: var(--muted);
+}
+.hosting-facts dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.hosting-workflow {
+  padding-left: 22px;
+  margin: 0;
+  line-height: 1.7;
+}
+.hosting-workflow li + li {
+  margin-top: 10px;
+}
+.hosting-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.hosting-file {
+  position: relative;
+  overflow: hidden;
+}
+.hosting-file:focus-within {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.hosting-file input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+  width: 100%;
+  height: 100%;
+}
+.hosting-file[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: default;
+}
+.hosting-progress {
+  margin-top: 20px;
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.hosting-progress progress {
+  width: 100%;
+}
+.hosting-key {
+  margin-top: 20px;
+}
+.hosting-key > label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.hosting-keys,
+.hosting-jobs ul {
+  padding: 0;
+  list-style: none;
+  margin: 20px 0 0;
+}
+.hosting-keys li,
+.hosting-jobs li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+  min-width: 0;
+}
+.hosting-keys strong,
+.hosting-jobs strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.hosting-keys small,
+.hosting-jobs small {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.hosting-jobs {
+  margin-top: 20px;
+}
+.hosting-jobs li > div {
+  min-width: 0;
+}
+.hosting-jobs .help {
+  max-width: 80ch;
+  margin: 8px 0 0;
+}
+.hosting-signout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 20px 4px 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.hosting-signout a {
+  margin-left: auto;
+}
+@media (max-width: 760px) {
+  .hosting-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .hosting-section {
+    padding: 18px;
+  }
+  .hosting-facts > div {
+    grid-template-columns: minmax(75px, 0.65fr) minmax(0, 1.4fr);
+    gap: 10px;
+  }
+  .hosting-signout a {
+    margin-left: 0;
+  }
+}

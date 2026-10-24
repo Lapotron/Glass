@@ -1,0 +1,209 @@
+# Project contracts
+
+The executable schemas live in `src/shared/contracts.ts`. The component registry and its schemas live in `src/shared/interactives.ts`; these are the source of truth when a detail changes.
+
+## Project identity and compatibility
+
+The application is **Glass**, with package name `glass`. Project documentation, Studio's document title, default application branding and new download filenames use this name. The author's public site name, content, collection paths and configured Cloudflare target are independent notebook settings.
+
+Retain existing technical identifiers across the rename: the `fieldnotes-markdown/1` dialect, `fieldnotes-notebook` backup format, `.fieldnotes-authoring-pack` ownership marker, `fieldnotes-*` browser storage/IndexedDB keys, `fieldnotes:` DOM events and existing renderer-cache identifiers. These are compatibility contracts, not display branding; a project rename must not invalidate saved preferences, media, backups or external authoring packs. New Glass-named downloads retain the existing portable schemas and are imported by content rather than by filename. Temporary workspace prefixes are implementation details. Future MCP resource examples use `glass://`; no MCP adapter is activated by this rename.
+
+## Source and routes
+
+The optional [hosted Studio](hosted-studio.md) retains these canonical contracts behind Cloudflare Access. Its request-scoped filesystem uses an encrypted private R2 object store and a revision-checked D1 manifest. Heavy operations run from captured snapshots in Workers Builds; only an approved release can reach the separate reader Worker. Local loopback/process assumptions below describe the retained local runtime. Neither Studio runtime nor private storage bindings enter the public artifact.
+
+Hosted Studio owns `/` on its private hostname, with hash-based workspace sections. Its compiler, authoring references and static assets share that protected origin. Legacy `/studio/` bookmarks redirect to root while preserving query and fragment navigation. Local Studio retains `/studio/` alongside the local reader. Missing hosted paths remain 404 rather than falling through to the public reader or Studio shell.
+
+- `content/site.json`: `SiteConfig` version 1, profile, legacy navigation/section keys, homepage composition and retained slides, theme, and Pages target identifiers.
+- `content/library.json`: the photo journal and preserved legacy news records. Photo records include a stable ID, local image URL, alt text, caption, album, date, and sample flag. Legacy news is retained on disk for compatibility, but is no longer displayed or edited in the interface.
+- `content/posts/*.md` and `content/lab/*.md`: UTF-8 Markdown with YAML frontmatter. Files are flat; file names do not determine routes.
+- `content/media/`: local assets. Uploads use unique names. Refer to them as `/media/name.ext`.
+
+Required frontmatter: `id`, `slug`, `title`, `publishedAt` (a real YYYY-MM-DD date). Defaults: `status: draft`, `summary: ''`, `tags: []`, `lang: en`, `cover: ''`, `featured: false`, `demo: false`, `comments: true`, `publishAt: ''`. Status is draft, scheduled, or published; scheduled entries require a valid UTC publication timestamp. Optional `updatedAt` uses the same calendar-date format. Use `lang: zh` for Chinese content. IDs remain stable when titles or slugs change.
+
+Default collection routes are `/blog/{slug}/` and `/lab/{slug}/`. `site.collections.posts` and `.lab` configure each collection's name, singular name and public path; source folders and kind IDs remain `posts` and `lab`. Collection indexes use the configured prefixes. Missing settings retain the original names/paths without rewriting source. Studio saves retain earlier prefixes as native permanent redirects. Read [collection settings](site-settings.md#content-names-and-paths) for validation, history, preview and discussion identity. Unicode article slugs are supported. Other generated routes are `/`, `/life/`, `/life/{album}/`, `/archive/`, and `/tags/{tag}/`. Album and tag names generate Unicode-friendly heading slugs. Colliding routes fail the build. `404.html` is a real missing-page response, not an SPA shell.
+
+Writing/Lab entries additionally have stable `shortCode` and `shortAliases` defaults. Published `/s/{code}` links use native Pages 302 redirects; legacy codes derive from the stable ID without rewriting source. Profile settings add an optional `email` and default-on `protectEmailLinks`. Read [Studio operations](studio-operations.md) for these persisted contracts, selection APIs, transactional batch changes, Markdown import/export, backup retention and media cleanup.
+
+Markdown uses unified/remark with CommonMark, GFM, footnotes, math, sanitized HTML, and build-time Expressive Code highlighting. The engine owns routing, templates, asset handling, and writing output. Extend that engine directly.
+
+The `fieldnotes-markdown/1` catalog owns directive forms, attributes, examples and nesting. [Authoring](authoring.md), the generated reference, Studio assistance and exported capabilities share it. Diagnostics include severity/code/message, source offsets, line/column and optional configuration path. Studio assistance may additionally attach a category and a safe-fix description with exact source edits; these do not change existing diagnostic codes or make editorial warnings publishing errors. Explicit component labels support document-local counters, forward references and manual bibliography citations; labels never replace entry or discussion identities. The private validation/capabilities endpoints and implemented local MCP interfaces are documented in [MCP authoring](mcp-authoring.md).
+
+Charts extend the existing interactive JSON contract with validated data shapes and supported options, never author callbacks. Compile cached, sanitized, namespaced light/dark SVG before publication; browser ECharts loads on hover/focus/tap or controls and preserves static output on failure. Reader schema/engine boundaries remain intact. Read [charts](charts.md) for supported types, bounds, interactions and exports.
+
+`library.albums` defaults to an empty metadata array while existing photo album strings remain compatible. Read [photo albums](photo-albums.md) for atomic renames, stable paths/aliases, covers, public empty-album behavior and deletion/move semantics.
+
+Photo removals retain private version-1 receipts and use the shared Trash interface, with revision-checked mixed restores, portable backup retention and media protection. Read [Photo Trash](photo-albums.md#photo-trash); canonical libraries and public output contain active photos only.
+
+Studio supports a reviewed [notebook data reset](notebook-reset.md) that preserves site/Cloudflare settings and their artwork, records a portable recovery copy, clears author content/history and replaces local public output transactionally. [Media usage](media-usage.md) adds bounded, private source locations to the existing complete cleanup graph.
+
+Sanitized footnote IDs, fragment links, and accessible descriptions share one namespace. Hidden footnote labels stay outside the article outline.
+
+Each article renders its complete Markdown flow inside one continuous `.article-body.reading-surface`. Do not generate reading sections or prose cards. Registered widgets remain subtle insets; Mermaid figures are transparent image-like illustrations and rich Markdown tabs use unframed typographic navigation within that flow. Canonical Markdown, heading IDs and footnotes remain unchanged. About owns the visible biography in its Story; the retired `profile.bio` value is retained only for legacy missing-file recovery.
+
+Reader annotations retain exact rendered-text ranges without adding Markdown source offsets or highlights to public prose. The left outline and end-of-article conversation panel share an Annotations index. Its narrowly routed, read-only Pages worker discovers public GitHub threads without credentials; static generation and private Studio boundaries remain intact. See [annotation contracts](integrations.md) for mappings, filtered discovery, pagination and provider isolation.
+
+The same index drives persistent right-edge badges and optional nonnegative `comments`/`replies` counts. Background discovery is independent of the Giscus editor's on-demand loading. Grouping overlapping visual-row badges never changes their original fragment or discussion number. The read adapter obtains bounded, cached, validated public count metadata; unknown or partial reply totals remain explicit. No canonical content migration or private credential is involved.
+
+Archive uses the shared `chronologicalEntries` selector and `ArchiveTimeline` in both public pages and Studio. It includes published posts and Lab entries, ordered by publication date descending with deterministic ties, then grouped by year and month. Drafts never enter its count or timeline. The profile homepage prepends published entries selected by ordered `home.pinned` IDs, then reuses the chronological selector for its bounded recent-writing list without duplicates; visual chapters remain an alternative. Pins never change other listing or feed order. The compact timeline remains available in component specimens.
+
+Version 1 configuration accepts the retired `news` homepage section and `/news/` navigation link and normalizes them to Archive. The next settings save writes the current names without changing theme or profile values. `/news` and `/news/` redirect permanently to `/archive/`; the Pages `_redirects` file carries this behavior into the static deployment.
+
+`theme.backgroundImage` defaults to an empty string for existing notebooks. A selected background must be a local image URL; it enters the build's referenced-media set independently of article and gallery usage. Appearance previews use the unsaved selection; saving persists it with normal revision checks. Clearing restores the atmosphere background.
+
+`theme.wallpaperWash` defaults to `auto` and accepts `light` or `dark` independently of appearance. Studio Appearance saves the site default, shares it with unsaved previews and static output, and readers may override it locally. Wash opacity always follows `--wallpaper-dim` directly through zero; automatic readability must not impose a wash floor or emit protected-wash variables. See [reader preferences](reader-preferences.md) for inheritance, resets and local material contrast protection.
+
+Image comparison exposes one keyboard-operable vertical divider inside the image: a 1px stroke and 28px visible grip within a 44px target. Its semantic value moves horizontally from 0 to 100 with pointer, touch, arrows, Page Up/Down, Home, and End. Pointer capture ends on release or cancellation. The generated static view keeps both images, while the divider becomes interactive only after enhancement.
+
+## Persistence and previews
+
+`Store` in `src/engine/store.ts` loads and validates the repository. Writes are serialized, use a temporary file and rename, and compare SHA-256 revisions. A stale revision returns HTTP 409. Content editing must preserve unsaved text until the author resolves a conflict. Entries move to `.studio/trash/` and can be restored; collection saves preserve an undo chain in `.studio/history/`.
+
+The Hono API is local to this computer. `/api/bootstrap` returns model data, revision values, recent jobs, workspace identity, and a per-process write token. Mutations require `X-Studio-Token`; cross-origin access and non-local hostnames are rejected. A runtime lease coordinates the Studio and schedule CLI so a second process cannot reset an active job journal.
+
+| Interface                                              | Purpose                                                                                       |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------- |
+| `GET/POST /api/content`, `PUT/DELETE /api/content/:id` | List/create and revise/trash Markdown entries                                                 |
+| `GET /api/trash`, `POST /api/trash/:id/restore`        | Recover entries                                                                               |
+| `PUT /api/site`, `PUT /api/library`                    | Save `{value, revision}` with conflict detection                                              |
+| `POST /api/library/undo`                               | Restore the preceding collection with `{revision}`                                            |
+| `GET/POST /api/media`                                  | List assets or upload a multipart `file`                                                      |
+| `POST /api/preview`                                    | Render unsaved entry/body or site settings with the production renderer                       |
+| `POST /api/integrations/giscus/check`                  | Check public repository/category IDs through the fixed Giscus endpoint                        |
+| `POST /api/integrations/giscus/theme-preview`          | Render a sandboxed local style specimen from validated `{theme, mode}`; no save/provider call |
+| `GET/POST /api/jobs`                                   | List jobs or start `{action: 'build' \| 'publish'}`                                           |
+| `GET /api/events`                                      | SSE events: `ready`, `filesystem`, `job`, `heartbeat`                                         |
+| `GET /api/cloudflare`, `GET /api/cloudflare/projects`  | Authentication readiness and project discovery                                                |
+| `POST /api/cloudflare/project`                         | Create the configured Pages project                                                           |
+
+Preview URLs are temporary, local, unindexed, and stored separately from public output. They expire after 40 newer previews. The console uses the same `createRenderer` as the builder.
+
+Revision and portable backup APIs are documented in [recovery](recovery.md). Due-entry checks, UTC dates, job reconciliation, and automatic-retry holds are documented in [scheduling](scheduling.md). Optional Giscus, newsletter, and analytics contracts are in [integrations](integrations.md). These private recovery/runtime files never enter the public artifact.
+
+Cloudflare analytics adds defaulted `integrations.analytics.mode: 'manual' | 'managed'`. Manual retains its public-token requirement and privacy-gated loader; managed needs no token and only permits Cloudflare's own injected beacon through CSP. Both remain controlled by `enabled`, defaulting off. Configuration does not enable or disable injection in Cloudflare's dashboard. See the integration contract for ownership, duplicate prevention and generated output.
+
+## Editor workspace
+
+Source editing follows [editor workspace](editor-workspace.md). Version 1 browser preferences are scoped to the bootstrap workspace ID and contain editor preferences only. Outline/diagnostics/stats share a local worker with stale-result guards and a synchronous fallback. Title/summary remain ordinary frontmatter edited through the Settings mode beside Write/Split/Preview; source and settings stay mounted across view changes. The combined source footer reports position, statistics and save state. There is no new persisted content format.
+
+The private `POST /api/authoring/math-preview` batch contract and limits are documented in [editor workspace](editor-workspace.md#math-decorations). It uses local MathJax 4 and the ordinary Studio token/origin protection; it never becomes a public route. Version-1 source preferences add default-on `mathPreviews`/`inlineMathPreviews` and a validated `completionShortcut` (`Ctrl-Space` by default, empty to unassign). These are browser-local editor settings and do not enter site/frontmatter schemas.
+
+Pseudocode source follows [its editing contract](pseudocode.md#source-editing): completion and accepted snippets preserve canonical fences/metadata, indexes are local and bounded, and END statements are never inserted by ordinary typing. Current source edit ignores legacy `componentPreviews.pseudocode` and omits its widget/toggle, preserving other version-1 preferences and the compatible private preview API kind. Articles and printing retain build-time rendering and exact source exports. Mathematical operators compile to inline SVG with isolated fixed TeX and per-fence reuse; the `fieldnotes-markdown/1` dialect is unchanged.
+
+Mindmap directives accept optional `layout="map|tree"` without changing their list-based Markdown. Native SVG and a bounded versioned generated payload support intent-loaded reader navigation; see [mindmaps](mindmaps.md). Explicit Mermaid fences retain the cached renderer.
+
+## Article settings
+
+Optional `coverOptions`, `reading`, `typography`, `discussion` and `seo` frontmatter groups follow [article settings](article-settings.md). Omitted values inherit; false/zero remain intentional overrides. The shared resolver controls unsaved preview, static output and annotation eligibility. Revision/export/backup contracts retain these fields. Metadata-only sharing images participate in build and cleanup reference protection.
+
+## Presentation settings
+
+Interface localization follows [localization](localization.md). Defaulted `localization.labels` optionally provides Simplified/Traditional Chinese collection display names. Interface preferences are browser-local and independent for readers and Studio; they never change authored Markdown, content language, stable IDs or public URLs. Catalogs and explicit public UI markers are generated presentation assets, not author data.
+
+Site settings additionally own language, branding/icons, metadata/sharing, navigation tools, footer and feeds. Read [site settings](site-settings.md) before changing these persisted groups, generated files, previews or metadata delivery. About continues to own the profile. Missing groups and nested fields default without rewriting legacy notebooks.
+
+New theme, reading, publishing, and integration fields have schema defaults so version 1 notebooks load without rewriting author data. Appearance controls feed `themeVariables`; the same variables drive Studio, unsaved previews, and generated pages. Supported controls include reading typeface, article width/leading/paragraph spacing, corner radius, glass strength/blur/opacity/saturation, reading opacity, wallpaper position/blur/wash, ambient light, and reduced motion/transparency. Keep tool typography separate from article typefaces.
+
+`reading` controls outline, progress, dates, reading time, author, article footer, related-post count, and code line numbers. articleFooter defaults true. Optional modifiedDate inherits effective publishedDate visibility; only explicit entry.updatedAt is displayed, never filesystem mtime. Both support optional per-entry overrides. See [article footer](article-footer.md). Disabling progress does not disable outline tracking. Related entries exclude drafts, scheduled content, and the current entry. Line numbers are CSS counters and do not enter copied code. Appearance previews can target Home or a published article.
+
+Homepage/theme previews use published content. An article preview includes only its explicitly selected draft alongside published entries, so an unfinished unrelated draft cannot break the preview. MathJax macro definitions are scoped to one Markdown document and may span expressions within it; they never carry between posts or preview requests.
+
+## Builds and publication
+
+`buildSite(Store, options)` captures a source model, renders published content, validates routes/media/local links, bundles browser assets, copies referenced media, and creates feeds, search, sitemap, headers, and 404. MathJax and Mermaid render to static output before publication. Mermaid uses cached, namespaced light/dark SVG, with a source disclosure and no browser rendering library. Responsive raster candidates use actual distinct widths capped at 1600, including natural widths below that cap. Image/preload candidates share the generated dimension map. See [production performance](production-performance.md).
+
+The internal `ReaderAssets` interface is a versioned map of script, style and prepaint appearance URLs, with optional page-linked `contentStyle`, a validated `search` module URL and validated `chartModules` URLs. Builds write `assets/reader-assets.json` and compile those URLs into HTML; local previews read the same map. Search retries use the compiled module URL with a fresh query after an explicit Retry; the chart module map is fetched only for an explicit retry after a failed import. Both recover from cached module failures. Reader files use an immutable content-fingerprinted bundle prefix; fixed metadata stays revalidated. Authoring schemas, Node renderers, source maps, Studio and worker code are excluded from that bundle. ECharts is the documented intent-loaded reader enhancement; MathJax and Mermaid remain build-only. Diagram-renderer sessions accept a private cache directory and close after compilation. No canonical content schema migration is required.
+
+Each accepted build lives in `.studio/builds/{id}/public/`, with its source snapshot and `BuildResult` outside that public directory. `dist/` is replaced after successful validation. Failed builds leave the previous `dist/` available. Builds enforce the baseline Pages asset count and per-file size limits.
+
+Generated work caches follow [production performance](production-performance.md#reusing-local-work). They are private, bounded and disposable; no content/settings/HTTP schema changes are required. Reuse parsing by fresh source hash and return independent snapshots. Cached Markdown includes all document/context dependencies and separates preview from public output. Public-image cache hits still hash canonical source bytes; metadata listing does not read originals, while integrity-sensitive source operations retain verification. Cache corruption regenerates output and never makes a failed source valid.
+
+`JobService` runs one build/publication at a time. A publish job uses one captured configuration and uploads that exact accepted artifact. Jobs record states, logs, errors, manifests, and the deployment URL in `.studio/jobs/`. Interrupted jobs become failed on restart.
+
+Accepted artifacts include uncached `assets/deployment.json` containing only `{version:1,id:<build ID>}`. It never contains the private source revision or snapshot. Verification checks this identity before accepting a new artifact. If the returned Pages URL redirects specifically to its Cloudflare Access login, verification may use the captured HTTPS canonical origin only when its marker matches that exact build; all normal route/security checks still apply. Other redirects, missing/stale markers and legacy artifacts stay unverified. Access protection remains enabled and no login is followed.
+
+Jobs additionally retain their captured public `target`; build results optionally record total bytes and published-content counts. Read responses add a derived selection revision without persisting it into the job. The private history operations, artifact/report exports, atomic removal/undo and SSE removal contract are documented in [publishing](publishing.md#manage-build-history). History operations never remove artifacts or remote deployments. `POST /api/jobs/{id}/recheck` accepts the current job selection revision and only re-verifies an uploaded run that failed deployment verification; it does not build or upload. The captured canonical origin and exact build identity stay authoritative, preceding failure logs remain available, and successful verification updates the existing run.
+
+Publish jobs verify the captured account/project with a read-only Pages listing before compilation or R2 work; missing targets fail in the queued phase with setup guidance. `POST /api/cloudflare/project` snapshots credentials, reuses an existing project or runs `pages project create ... --force`, then verifies the target through the same Pages listing. It returns `{ok:true,created:boolean,projects:[{name:string}]}` only after readiness is established. This explicit Direct Upload path prevents Wrangler's new-project delegation to Workers; normal uploads retain the accepted artifact and established Pages target.
+
+Jobs optionally retain the captured `mediaDelivery` mode and the nonterminal `failedAt` phase. These private journal fields are backward compatible with older jobs. Failure and restart reconciliation preserve the stopped phase; a deployment URL alone never means success. Studio derives its stages from these facts, uses actual image counts for media checks and verification, and leaves unmeasured work indeterminate. Completion and elapsed duration stop at the recorded result.
+
+Studio retains newer SSE job progress when an earlier bootstrap or start response arrives later. Filesystem refreshes must not roll back completion or hide a newly started job.
+
+Wrangler runs as a child process with an argument array, `shell: false`, and a fixed command set. The server supplies account selection. Studio's write-only credential fields save to private local storage; stored tokens never enter read responses. Environment credentials and Wrangler login remain compatibility options. See [local configuration](local-configuration.md). `PublishResult` is only successful when Wrangler exits successfully and returns a Pages deployment URL.
+
+Only the artifact's public directory is deployed. Do not copy content source, local state, credentials, preview output, or the console into it.
+
+## Visual-page and media additions
+
+Public navigation is fixed to Home, Archive, Projects, Life, About. Legacy navigation/homeSections keys remain readable; defaulted `site.home` holds `layout:profile|chapters`, `motion:subtle|off`, profile visibility, recent-feed options, `pinned:[]` (at most 12 unique stable entry IDs), and retained `slides`. Studio Homepage owns this subtree through conflict-safe site saves. About owns `site.profile` and a separate conflict-safe Markdown page. Its defaulted `site.about.guestbook` is off until enabled. The two source revisions remain independent. See [visual page contracts](visual-pages.md) for homepage defaults, the slide model, route behavior, timeline filters, page APIs, and scroll-stable private previews; see [integration contracts](integrations.md) for Giscus options and conversation states.
+
+Uploads now retain private originals and create optimized derivatives with validated crop/resize recipes. Media responses include dimensions and source/edit capability. See [media contracts](media.md) for endpoints, coordinate systems, private storage and publishing boundaries. New backups use version 2 and continue importing version 1.
+
+## Reader preferences and media delivery
+
+`/tools/` is a public, indexable browser-local utility with Developer toolbox and Equation editor tabs. Header visibility defaults on through `navigationTools.tools`; the five main destinations remain unchanged. Its optional reader-manifest `toolsScript`/`toolsStyle` fields reference a separate graph, the only public route allowed to load CodeMirror/MathJax compilation. Ordinary articles retain static compilation and strict reader budgets. Tool inputs/drafts never become canonical content or analytics/search payloads. See [Tools](tools.md) for registry, limits, versioned encryption, local persistence and development reload contracts.
+
+`/settings/` is a public utility route beside the theme toggle, excluded from indexing, sitemap, search and feeds. Reader changes are browser-local; author settings and private previews retain independent ownership. See [reader preferences](reader-preferences.md) for storage, startup, local pictures and accessibility precedence.
+
+`library.mediaDetails` defaults to an empty map of canonical media URLs to `{publishCameraExif:false}`. Publication choices use ordinary library revisions, history and backups. New derivatives start without an opt-in. Private `GET /api/media/details?url=...` returns bounded camera/file details and the library revision; `PUT /api/media/details` accepts `{url,publishCameraExif,revision}` with the Studio write token. Both path resolution and stale writes are validated.
+
+Public builds generate `assets/media-details.json` for referenced images only. Camera data is an explicit vocabulary, not raw EXIF. Retained originals and identifiers stay private. See [media](media.md).
+
+Defaulted `site.mediaDelivery` contains `mode: pages|r2`, `bucket`, `publicOrigin` and `prefix`. A standalone build remains self-contained. R2 publication creates a separate frozen delivery artifact with a private transfer manifest, synchronizes and verifies its images, then deploys that exact artifact. See [publishing](publishing.md). The local Studio APIs remain outside both Pages and R2 output.
+
+## Contrast and local configuration
+
+Defaulted `theme.contrast` carries presets, reading/interface targets, automatic protection, a functional glass tint floor and separate light/dark role overrides. The legacy `readingFloor` value remains readable for backups and saved preferences but no longer raises article opacity. Article background tint can reach zero. One pure resolver feeds Studio, static output, prepaint appearance and validated reader overrides. See [reader preferences](reader-preferences.md). Private credentials and launcher settings have independent revisions and never enter `SiteConfig` or repository snapshots; see [local configuration](local-configuration.md).
+
+Private `GET /api/cloudflare` and `POST /api/connections/test` for Cloudflare return identity, selected `accountId`, `pagesAccess`, allowlisted project names and an actionable error when applicable. Selected-account Pages access uses a read-only project listing, with one credential snapshot for the check. An identity response or proxy warning alone never establishes Pages authorization. `GET /api/cloudflare/projects` uses the same names-only list and error classification.
+
+## Source component previews, reader focus and attachments
+
+The private source-preview batch interface is documented in [editor workspace](editor-workspace.md); it renders validated source ranges through production renderers without saving Markdown. Per-kind preview preferences are validated browser-local version-1 fields. Table editing applies one captured, mapped source transaction; concurrent changes to that component block Apply.
+
+Article footnote previews consume the sanitized static `data-footnote-ref`/`data-footnotes` DOM without adding persisted metadata, public APIs or reader requests. One browser-local margin coordinator combines footnote references, known annotation badges and the hovered-line action without changing anchors/thread mappings. Native endnotes/backlinks remain present. See [reader preferences](reader-preferences.md#footnotes-and-the-right-margin).
+
+ReaderPreferences version 1 accepts optional boolean focusMode as an override of the author’s default theme.focusMode (default off). Author theme.textScale defaults to 1, with the existing top-level reader textScale taking priority when present. It affects article routes only; Settings reset, cross-tab, prepaint and preview isolation follow [reader preferences](reader-preferences.md). Public Settings retains its existing layout; the reader Page width range reaches 1600px. Print output follows [printing](printing.md).
+
+Appearance bounds have one dependency-light source, `src/shared/appearance-ranges.ts`, shared by author schemas, Studio, reader validation, per-entry typography and native controls. Expanded limits do not change defaults or clamp valid legacy values. Zero blur/corners/spacing are real values, and ambient intensity supports 0–2 without invalid alpha percentages. The maintained bounds and the three-scene Settings specimen are in [reader preferences](reader-preferences.md). ReaderAssets version 1 accepts optional fingerprinted `settingsStyle`; only Settings links it. Older manifests remain readable.
+
+The Files link tab uses canonical /media/ attachments, existing MediaAsset records, authenticated uploads and portable backups. Supported MIME/extension pairs and binary signatures are shared by media management and delivery. Href references enter published assets and R2 manifests; draft-only/unreferenced files remain private to the notebook. See [media](media.md).
+
+Optional figure attributes `width`, `max-height` and `align` are bounded by the shared image-layout parser. The catalog/diagnostics, production renderer and source Image tools share their meaning. They affect display only; canonical media URLs and viewer/download resolution remain unchanged. See [authoring](authoring.md#single-image-display-size).
+
+## Discovery, Projects, and dynamic services
+
+The versioned Projects collection and public search/code interfaces follow [reader upgrades](reader-upgrades.md). A missing `content/projects.json` is empty without a write; published visibility is independent of development status. Its revision, transaction journal, undo history, backup/restore/reset and media graph are part of the notebook contract. Public navigation includes Projects between Archive and the configured Life destination.
+
+Pagefind indexes complete published rendered content and public structured records in language-specific native bundles inside the pending artifact. Its fixed revalidated manifest points to immutable indexes. Studio search uses the accepted public artifact. Legacy `/search.json` remains readable. `/search/` is a noindex utility excluded from the sitemap. Code uses build-time Expressive Code and a semantic source-line adapter that preserves existing annotation hashes.
+
+[ACA](aca.md) owns a separate Worker, D1 migrations, bounded versioned event/report protocol, default-off public configuration and a private Studio report proxy. Browser identity is opt-in; raw records and summaries have separate retention/deletion rules. Report credentials remain private. The [Vinext prototype](dynamic-prototype.md) has its own package/config/output/DB and verifies Access before routing any request; it never changes root Pages publication or becomes a reader analytics dependency.
+
+## ACA protocol 2 and service readiness
+
+ACA public version-1 batches optionally include `networkEstimate`; raw IP fields remain invalid. Author `integrations.aca.dailyNetworkEstimates` defaults false without rewriting existing notebooks. Current readers use anonymous document IDs even if an old local opt-in value exists. Production Workers default to anonymous identity mode and process optional, daily, site-scoped network hashes only at the edge. Ephemeral keys never enter views, events, responses or public output; retained daily counts do not identify people or deduplicate across dates.
+
+Protocol-2 private reports add `networkMode`, optional `series[].networks` and collection state. Daily mode omits legacy browser series and exposes unavailable cross-day identity metrics explicitly. Service status and bounded maintenance are token-protected; Studio proxies report/status requests server-side. `GET /api/services/readiness` is read-only, metadata-only and loopback-only. Independent deployment credentials and reports stay outside notebook content/backups and the Pages artifact. See [ACA](aca.md) and [dynamic staging](dynamic-prototype.md).
+
+Managed ACA setup follows [the ACA deployment contract](aca.md). `GET /api/aca/deployment` returns private-setting revision, public target/options, busy state, key-presence status, database ID and the last redacted captured job. `PUT` accepts `{value,revision}`; POST `/check`, `/setup` and `/deploy` take `{revision}`. Check is read-only; setup/deploy return a 202 captured job and are serialized across Studio/CLI. Each runs with one account/credential/site snapshot and its own Workers/D1/domain permission set, independent of Access. Job stages are checking, database, migrating, secrets, uploading and verifying; interrupted/failed jobs retain their stopped phase and any uploaded endpoint. Generated configurations/keys remain private and public collection settings are filled only into the author's draft after verification. Authenticated Worker status adds `siteId`, `siteOrigin` and `deploymentId` so a stale service cannot verify a different upload. Portable backups and Pages exclude these managed files. Notebook recovery/reset is blocked during active setup; ordinary Pages publication remains independent.
+
+## Audience foundations and local tools
+
+[Audience foundations](audience-foundations.md) owns protocol-3 ACA capabilities, version-2 observations, normalized metadata, consented histories, the private Earth/visit reports, bounded percentile summaries and Search Console import semantics. [Service recovery](service-recovery.md) separates compatible Worker rollback from D1 restoration. Studio continues to inspect older status protocols; publication checks the matching collector before touching R2/Pages.
+
+The private API adds `/api/health`, `/api/search-console` and its review/import/removal routes, `/api/cloud-media` with separate health/review/cleanup actions, and `/api/aca/versions` plus reviewed rollback. All retain ordinary loopback/origin/token/no-store boundaries. CSV imports and issue history live outside canonical content. Cloud ownership/operation journals survive notebook reset to preserve remote provenance; reset clears local imported search reports, health history and saved audience segments without changing cloud services. Those private report namespaces participate in the ordinary transaction allowlist and reset recovery journal; connection credentials and cloud ownership remain excluded.
+
+MCP uses fixed notebook-bound stdio through a running Studio, not a Pages endpoint. `POST /api/authoring/draft` and temporary draft previews reuse validation/rendering and Store's revision checks. No MCP publication or raw-path tools exist. Browser-local reading records are independent of authored content and analytics identity. `/assets/reading-catalog.json` contains published identities/routes only, with revalidated caching. Canonical aliases and retained CDN URLs are preserved during content-addressed media delivery.
+
+## Segments and media sharing
+
+[ACA audience segments](aca.md#audience-segments) adds validated joint filtering, private saved segments, capability discovery and explicit coverage on reports, with additive protocol-3-compatible D1 migration 0004. [Media names and short links](media.md#readable-names-and-media-short-links) extends library metadata, generic private metadata APIs, reserved `/m/` redirects, standalone-sharing eligibility and retained reference protection. [Asset discovery](media.md#asset-discovery-and-embedding) owns defaulted protection settings, Pages response headers and reviewed scoped Cloudflare rules. These changes preserve canonical asset filenames, R2 byte addresses and private originals.
+
+## Markdown IDE and STEM authoring
+
+[Markdown IDE maintenance](markdown-ide.md) owns lazy fenced-language support, private JS/TS virtual projects, visible-first rich previews, gutter geometry and reviewed Post/Article conversion. Entry metadata adds optional `math.packages`, default-empty `routeAliases` (at most 80 former article URLs), and optional `discussion.articleTerm`. Conversion extends the existing atomic content batch API, retains the `batch` history reason and keeps canonical kind IDs/folders unchanged. Specific published redirects resolve to the current route before collection wildcards; aliases participate in collision and link validation.
+
+[Math authoring](math-authoring.md) defines the shared package allowlist and completion behavior. The private math endpoint retains its expressions batch and adds `{source,ranges,math?}` for bounded context with requested SVG targets. Component previews accept the same optional `math` settings. Only core packages remain enabled when metadata is omitted. Readers receive build-time SVG. Pseudocode and JS/TS fence metadata follow [pseudocode](pseudocode.md). Inline `==highlight==` is parsed alongside the existing mark directive in analysis, previews, source highlighting and production.
+
+`authoring:pack` includes a self-contained Markdown authoring skill with generated references and reviewed templates. Product instructions are generated from `src/shared/authoring-instructions.ts` for the portable pack, local MCP and hosted Studio; runtime and build paths do not read private development-agent configuration. The local MCP resources add `glass://authoring/skill` and a fixed allowlist at `glass://authoring/guides/{name}`; there is no new publication or arbitrary-path tool.

@@ -1,0 +1,454 @@
+input:where(
+  :not([type='range']):not([type='checkbox']):not([type='radio']):not([type='color']):not(
+      [type='file']
+    )
+),
+textarea,
+select {
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid var(--control-border);
+  border-radius: 13px;
+  padding: 10px 13px;
+  color: var(--text);
+  background: linear-gradient(145deg, var(--glass-sheen), transparent 70%), var(--control-bg);
+  box-shadow: var(--control-shadow);
+  -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 0.35));
+  backdrop-filter: blur(calc(var(--glass-blur) * 0.35));
+  line-height: 1.5;
+  transition:
+    border-color 180ms,
+    background-color 180ms,
+    box-shadow 200ms;
+}
+.field :is(input, textarea, select) {
+  font-size: calc(13px * var(--font-scale));
+}
+textarea {
+  resize: vertical;
+}
+input[type='search'] {
+  appearance: none;
+}
+input[type='file'] {
+  width: 100%;
+  color: var(--muted);
+  font-size: calc(12px * var(--font-scale));
+  border: 1px dashed var(--control-border);
+  border-radius: 13px;
+  background: var(--inset-bg);
+  padding: 7px;
+}
+input[type='file']::file-selector-button {
+  font: inherit;
+  color: var(--text);
+  border: 1px solid var(--glass-border);
+  border-radius: 9px;
+  padding: 8px 12px;
+  margin-right: 12px;
+  background: linear-gradient(150deg, var(--glass-sheen), transparent), var(--control-bg);
+  box-shadow: var(--control-shadow);
+  cursor: pointer;
+}
+input[type='file']:hover::file-selector-button {
+  background-color: var(--control-hover);
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--placeholder-text);
+  opacity: 1;
+}
+input:where(
+    :not([type='range']):not([type='checkbox']):not([type='radio']):not([type='color']):not(
+        [type='file']
+      )
+  ):hover:where(:not(:disabled):not(:read-only)),
+textarea:hover:where(:not(:disabled):not(:read-only)),
+select:hover:where(:not(:disabled)) {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--control-border));
+  background-color: var(--control-hover);
+}
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+input:where(:not([type='range']):not([type='checkbox']):not([type='radio'])):focus,
+textarea:focus,
+select:focus {
+  border-color: var(--accent);
+  box-shadow:
+    var(--control-shadow),
+    0 0 0 3px var(--accent-soft);
+}
+input[aria-invalid='true'],
+textarea[aria-invalid='true'],
+select[aria-invalid='true'] {
+  border-color: var(--danger);
+}
+input[aria-invalid='true']:focus-visible,
+textarea[aria-invalid='true']:focus-visible,
+select[aria-invalid='true']:focus-visible {
+  outline-color: var(--danger);
+}
+input:disabled,
+textarea:disabled,
+select:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+input[readonly],
+textarea[readonly] {
+  color: var(--muted);
+  box-shadow: inset 0 1px 0 var(--glass-highlight);
+}
+select {
+  appearance: none;
+  padding-right: 38px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='m2 2 4 4 4-4' fill='none' stroke='%23617188' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-position: right 14px center;
+  background-size: 12px 8px;
+  background-repeat: no-repeat;
+  background-color: var(--control-bg);
+}
+select option {
+  background: var(--surface-solid);
+  color: var(--text);
+}
+input[type='number'] {
+  font-variant-numeric: tabular-nums;
+}
+input[type='date'],
+input[type='datetime-local'] {
+  min-width: 0;
+  color-scheme: light;
+}
+:root[data-theme='dark'] :is(input[type='date'], input[type='datetime-local']) {
+  color-scheme: dark;
+}
+:root[data-theme='dark'] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8'%3E%3Cpath d='m2 2 4 4 4-4' fill='none' stroke='%23b8c7dd' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+}
+input[type='range'] {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 32px;
+  min-height: 32px;
+  margin: 6px 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: ew-resize;
+  touch-action: pan-y;
+  accent-color: var(--accent);
+}
+input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    var(--accent) 0 var(--range-fill, 50%),
+    var(--control-track) var(--range-fill, 50%) 100%
+  );
+  box-shadow:
+    inset 0 1px 2px #132a4520,
+    0 1px 0 var(--glass-highlight);
+}
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 23px;
+  height: 23px;
+  margin-top: -8.5px;
+  border: 1px solid var(--glass-border);
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 30% 16%, var(--glass-highlight), transparent 70%),
+    var(--control-thumb);
+  box-shadow:
+    0 3px 9px #102c4930,
+    inset 0 1px 0 var(--rim-light);
+  transition:
+    scale 240ms var(--ease-glass-spring),
+    box-shadow 180ms;
+}
+input[type='range']:hover:not(:disabled)::-webkit-slider-thumb,
+input[type='range']:focus-visible::-webkit-slider-thumb {
+  scale: 1.12;
+  box-shadow:
+    0 4px 13px #102c4938,
+    0 0 0 4px var(--accent-soft),
+    inset 0 1px 0 var(--rim-light);
+}
+input[type='range']:active:not(:disabled)::-webkit-slider-thumb {
+  scale: 1.2 1.08;
+}
+input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--control-track);
+}
+input[type='range']::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--accent);
+}
+input[type='range']::-moz-range-thumb {
+  width: 23px;
+  height: 23px;
+  border: 1px solid var(--glass-border);
+  border-radius: 50%;
+  background: var(--control-thumb);
+  box-shadow:
+    0 3px 9px #102c4930,
+    inset 0 1px 0 var(--rim-light);
+}
+input[type='checkbox'],
+input[type='radio'] {
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  position: relative;
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  min-height: 0;
+  padding: 0;
+  margin: 0;
+  vertical-align: -4px;
+  border: 1px solid var(--control-border);
+  border-radius: 7px;
+  background: linear-gradient(145deg, var(--glass-highlight), transparent 52%), var(--control-bg);
+  box-shadow:
+    inset 0 1px 0 var(--rim-light),
+    inset 0 -1px 2px #172c4717,
+    0 2px 5px #172c4710;
+  cursor: pointer;
+  transition:
+    background-color 180ms,
+    border-color 180ms,
+    box-shadow 180ms,
+    scale 240ms var(--ease-glass-spring);
+}
+input[type='radio'] {
+  border-radius: 50%;
+}
+input[type='checkbox']:checked,
+input[type='radio']:checked {
+  background:
+    linear-gradient(145deg, #ffffff38, transparent 60%),
+    color-mix(in srgb, var(--accent) 88%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 80%, var(--glass-border));
+  box-shadow:
+    inset 0 1px 0 #ffffff70,
+    inset 0 -1px 2px #122b4b30,
+    0 3px 9px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+input[type='checkbox']:checked::after {
+  content: '';
+  width: 5px;
+  height: 9px;
+  margin-top: -2px;
+  border: solid var(--accent-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+input[type='checkbox']:indeterminate::after {
+  content: '';
+  width: 10px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--accent-text);
+}
+input[type='radio']:checked::after {
+  content: '';
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent-ink);
+}
+input[type='checkbox']:hover:not(:disabled),
+input[type='radio']:hover:not(:disabled) {
+  border-color: var(--accent);
+  box-shadow:
+    var(--control-shadow),
+    0 0 0 4px var(--accent-soft);
+}
+input[type='checkbox']:active:not(:disabled),
+input[type='radio']:active:not(:disabled) {
+  scale: 0.9;
+}
+input[role='switch'] {
+  width: 48px;
+  height: 28px;
+  border-radius: 999px;
+  display: block;
+  background: linear-gradient(160deg, var(--glass-sheen), transparent 70%), var(--control-bg);
+  box-shadow:
+    inset 0 1px 3px #142b4520,
+    0 1px 0 var(--glass-highlight);
+}
+input[role='switch']::after,
+input[role='switch']:checked::after {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 20px;
+  height: 20px;
+  margin: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: 50%;
+  background:
+    radial-gradient(ellipse at 30% 10%, var(--rim-light), transparent 65%), var(--control-thumb);
+  box-shadow:
+    0 2px 5px #102c4926,
+    inset 0 1px 0 var(--rim-light),
+    inset 0 -1px 0 var(--rim-mid);
+  transform: none;
+  transition:
+    transform 300ms var(--ease-glass-spring),
+    width 180ms;
+}
+input[role='switch']:checked::after {
+  transform: translateX(20px);
+  background:
+    linear-gradient(150deg, #ffffff70, transparent 65%),
+    color-mix(in srgb, var(--accent) 88%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--glass-border));
+}
+input[role='switch']:checked {
+  background:
+    linear-gradient(145deg, var(--glass-sheen), transparent),
+    color-mix(in srgb, var(--accent) 18%, var(--control-bg));
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--control-border));
+  box-shadow:
+    inset 0 1px 3px #142b4515,
+    0 1px 0 var(--glass-highlight);
+}
+input[role='switch']:active:not(:disabled) {
+  scale: 1;
+}
+input[role='switch']:active:not(:disabled)::after {
+  width: 24px;
+}
+input[role='switch']:checked:active:not(:disabled)::after {
+  transform: translateX(16px);
+}
+.check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  font-size: calc(12px * var(--font-scale));
+  color: var(--muted);
+  cursor: pointer;
+}
+.toggle-row {
+  min-height: 48px;
+}
+.editor-title-area :is(input, textarea) {
+  box-shadow: none;
+}
+html[data-reduce-transparency='true'] :is(input, textarea, select) {
+  --control-bg: var(--surface-solid);
+  --control-thumb: var(--surface-solid);
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  :is(input, textarea, select) {
+    --control-bg: var(--surface-solid);
+    --control-thumb: var(--surface-solid);
+  }
+}
+@media (forced-colors: active) {
+  input[type='checkbox'],
+  input[type='radio'],
+  input[type='range'],
+  select {
+    appearance: auto;
+    forced-color-adjust: auto;
+  }
+  input::after {
+    display: none;
+  }
+}
+
+/* Keep the leading icon above the input's backdrop-filter stacking context. */
+:root :is(.search-field, .archive-search) {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+:root :is(.search-field, .archive-search) > svg {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  z-index: 2;
+  display: block;
+  flex-shrink: 0;
+  pointer-events: none;
+  color: var(--muted);
+}
+:root :is(.search-field, .archive-search) > input {
+  padding-inline-start: 40px !important;
+  min-width: 0;
+  width: 100%;
+  border-radius: var(--radius-pill);
+}
+:root .search-top > svg {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  position: relative;
+  z-index: 2;
+  color: var(--muted);
+}
+:root .search-top > input {
+  min-width: 0;
+  flex: 1;
+}
+
+:root input[role='switch'] {
+  flex: 0 0 48px;
+  min-width: 48px;
+  max-width: 48px;
+  height: 28px;
+}
+:root input[role='switch']::after,
+:root input[role='switch']:checked::after {
+  margin: 0;
+}
+
+/* Native picker, shared glass field geometry. Studio's hidden custom swatch stays compact. */
+input.color-input[type='color'] {
+  appearance: none;
+  width: 50px;
+  height: 42px;
+  padding: 5px;
+  border: 1px solid var(--control-border);
+  border-radius: 12px;
+  background: linear-gradient(145deg, var(--glass-sheen), transparent 70%), var(--control-bg);
+  box-shadow: var(--control-shadow);
+  cursor: pointer;
+}
+input.color-input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+input.color-input[type='color']::-webkit-color-swatch {
+  border: 0;
+  border-radius: 7px;
+}
+input.color-input[type='color']::-moz-color-swatch {
+  border: 0;
+  border-radius: 7px;
+}
+input.color-input[type='color']:hover {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--control-border));
+}

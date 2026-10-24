@@ -1,0 +1,21 @@
+CREATE TABLE IF NOT EXISTS cloud_workspace (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL DEFAULT 0);
+INSERT OR IGNORE INTO cloud_workspace(id,version) VALUES(1,0);
+CREATE TABLE IF NOT EXISTS cloud_files(path TEXT PRIMARY KEY, sha TEXT NOT NULL, bytes INTEGER NOT NULL, modified TEXT NOT NULL, text TEXT, encrypted INTEGER NOT NULL DEFAULT 0);
+CREATE TABLE IF NOT EXISTS cloud_commits(parent INTEGER PRIMARY KEY, actor TEXT NOT NULL, created TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cloud_actors(id TEXT PRIMARY KEY, email TEXT NOT NULL, role TEXT NOT NULL CHECK(role IN ('owner','editor')), created TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cloud_jobs(id TEXT PRIMARY KEY, kind TEXT NOT NULL, state TEXT NOT NULL, actor TEXT NOT NULL, version INTEGER NOT NULL, request TEXT NOT NULL, build_uuid TEXT UNIQUE, created TEXT NOT NULL, updated TEXT NOT NULL, result_key TEXT, error TEXT, commit_sha TEXT, release_id TEXT);
+CREATE INDEX IF NOT EXISTS cloud_jobs_state ON cloud_jobs(state,created);
+CREATE TABLE IF NOT EXISTS cloud_releases(id TEXT PRIMARY KEY, version INTEGER NOT NULL, manifest_key TEXT NOT NULL, created TEXT NOT NULL, state TEXT NOT NULL, build_uuid TEXT, deployment_url TEXT);
+CREATE TABLE IF NOT EXISTS cloud_control(id INTEGER PRIMARY KEY CHECK(id=1), approved_release TEXT, live_release TEXT, deploy_lease TEXT, lease_expires INTEGER);
+INSERT OR IGNORE INTO cloud_control(id) VALUES(1);
+CREATE TABLE IF NOT EXISTS cloud_keys(id TEXT PRIMARY KEY, digest TEXT NOT NULL UNIQUE, actor TEXT NOT NULL, scopes TEXT NOT NULL, created TEXT NOT NULL, revoked INTEGER NOT NULL DEFAULT 0);
+
+CREATE TABLE IF NOT EXISTS cloud_patches(id TEXT NOT NULL,path TEXT NOT NULL,sha TEXT,bytes INTEGER,modified TEXT,text TEXT,encrypted INTEGER,PRIMARY KEY(id,path));
+CREATE TABLE IF NOT EXISTS cloud_migrations(id TEXT PRIMARY KEY,actor TEXT NOT NULL,version INTEGER NOT NULL,created TEXT NOT NULL,state TEXT NOT NULL DEFAULT 'uploading');
+CREATE TABLE IF NOT EXISTS cloud_reviews(id TEXT PRIMARY KEY,job_id TEXT NOT NULL,version INTEGER NOT NULL,response TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS cloud_storage(id INTEGER PRIMARY KEY CHECK(id=1),bytes INTEGER NOT NULL DEFAULT 0,budget INTEGER NOT NULL DEFAULT 5368709120,CHECK(bytes>=0 AND bytes<=budget));
+INSERT OR IGNORE INTO cloud_storage(id) VALUES(1);
+CREATE TABLE IF NOT EXISTS cloud_objects(key TEXT PRIMARY KEY,bytes INTEGER NOT NULL,created TEXT NOT NULL);
+CREATE UNIQUE INDEX IF NOT EXISTS cloud_jobs_one_active ON cloud_jobs((1)) WHERE state IN ('queued','running');
+CREATE TABLE IF NOT EXISTS cloud_job_files(job_id TEXT NOT NULL,path TEXT NOT NULL,sha TEXT NOT NULL,encrypted INTEGER NOT NULL,PRIMARY KEY(job_id,path));
+CREATE TRIGGER IF NOT EXISTS cloud_job_capture BEFORE INSERT ON cloud_jobs WHEN NEW.actor!='github' AND NEW.version!=(SELECT version FROM cloud_workspace WHERE id=1) BEGIN SELECT RAISE(ABORT,'notebook changed before job capture'); END;

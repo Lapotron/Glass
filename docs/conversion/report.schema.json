@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Glass conversion report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "inputs", "output", "assumptions", "issues", "assets", "validation"],
+  "properties": {
+    "version": { "const": "fieldnotes-markdown/1" },
+    "inputs": { "type": "array", "items": { "type": "string" } },
+    "output": { "type": "string" },
+    "assumptions": { "type": "array", "items": { "type": "string" } },
+    "issues": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["kind", "source", "message", "resolution"],
+        "properties": {
+          "kind": { "enum": ["unsupported", "macro", "reference", "asset", "editorial"] },
+          "source": { "type": "string" },
+          "message": { "type": "string" },
+          "resolution": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "assets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["source", "target", "alt"],
+        "properties": {
+          "source": { "type": "string" },
+          "target": { "type": "string", "pattern": "^/media/" },
+          "alt": { "type": "string" }
+        },
+        "additionalProperties": false
+      }
+    },
+    "validation": {
+      "type": "object",
+      "required": ["status", "command", "diagnostics"],
+      "properties": {
+        "status": { "enum": ["pending", "passed", "failed"] },
+        "command": { "type": "string" },
+        "diagnostics": { "type": "array", "items": { "type": "string" } }
+      },
+      "additionalProperties": false
+    }
+  }
+}

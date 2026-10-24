@@ -1,0 +1,221 @@
+/* Explicitly authored components share the reading scale and quiet inset material. */
+:root .prose :is(.md-alert, .md-discussion, .md-details, .md-tabs, .md-question, .md-answer) {
+  font-size: 1em;
+}
+:root .prose .md-component-title {
+  font: 600 0.88em/1.6 var(--font);
+  color: var(--heading);
+  letter-spacing: 0;
+  margin: 0 0 0.85em;
+}
+:root
+  .prose
+  :is(
+    .md-theorem,
+    .md-lemma,
+    .md-proposition,
+    .md-corollary,
+    .md-definition,
+    .md-example,
+    .md-algorithm,
+    .md-proof
+  ) {
+  margin: 1.8em 0;
+  padding: 1em 1.25em;
+  border-inline-start: 2px solid color-mix(in srgb, var(--accent) 48%, var(--line));
+  background: linear-gradient(100deg, var(--accent-soft), transparent 85%);
+  border-radius: 0 var(--radius-small) var(--radius-small) 0;
+}
+:root .prose :is(.md-definition, .md-example, .md-proof) {
+  background: transparent;
+  border-inline-start-color: var(--line);
+}
+:root
+  .prose
+  :is(.md-theorem, .md-lemma, .md-proposition, .md-corollary)
+  > p:not(.md-component-title) {
+  font-style: italic;
+}
+:root
+  .prose
+  :is(
+    .md-theorem,
+    .md-lemma,
+    .md-proposition,
+    .md-corollary,
+    .md-definition,
+    .md-example,
+    .md-algorithm,
+    .md-proof,
+    .md-option
+  )
+  > :last-child {
+  margin-bottom: 0;
+}
+:root .prose .proof-end {
+  text-align: end;
+  font-style: normal;
+  line-height: 1;
+  color: var(--heading);
+}
+:root .prose .md-equation {
+  position: relative;
+  margin: 1.8em 0;
+  padding: 0 3.2em 0 0;
+}
+:root .prose .md-equation .math-display {
+  margin: 0.6em 0;
+}
+.equation-number {
+  position: absolute;
+  inset-inline-end: 0;
+  top: 1em;
+  font-size: 0.85em;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+:root .prose :is(.md-table, .md-equation) > figcaption {
+  font-size: 0.84em;
+  color: var(--muted);
+  line-height: 1.7;
+  margin: 0.8em 0;
+  text-align: start;
+}
+:root .prose .md-table {
+  margin: 1.8em 0;
+}
+:root .prose .md-table > figcaption {
+  color: var(--heading);
+  font-weight: 550;
+}
+:root .prose .md-table > :is(p, ul, ol) {
+  font-size: 0.84em;
+  color: var(--muted);
+  margin: 0.65em 0;
+}
+:root .prose :is(.md-reference, .md-citation) {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+}
+:root .prose :is(.md-reference, .md-citation):hover {
+  border-color: var(--accent);
+}
+:root .prose .md-references {
+  margin-top: 2.2em;
+  padding-top: 1em;
+  border-top: 1px solid var(--line);
+}
+:root .prose .md-reference:not(a) {
+  font-size: 0.88em;
+  margin: 1.1em 0;
+  padding-inline-start: 1em;
+  border-inline-start: 1px solid var(--line);
+}
+:root .prose .md-reference:not(a) > p {
+  margin: 0.45em 0;
+}
+:root .prose :is(.md-comparison, .md-mindmap) {
+  margin: 1.8em 0;
+  padding: 1.2em;
+  background: var(--inset-bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
+}
+:root .prose .md-comparison {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+  gap: 1.1em;
+}
+:root .prose .md-comparison > .md-component-title {
+  grid-column: 1/-1;
+  margin-bottom: 0;
+}
+:root .prose .md-option {
+  min-width: 0;
+  padding: 0.6em 0.8em;
+  border-inline-start: 1px solid var(--line);
+}
+:root .prose .md-option > .md-component-title {
+  color: var(--accent-text);
+}
+:root .prose .md-timeline {
+  margin: 1.8em 0;
+}
+:root .prose .md-timeline > :is(ul, ol) {
+  list-style: none;
+  padding: 0 0 0 1.4em;
+  border-inline-start: 1px solid var(--line);
+  margin-inline-start: 0.35em;
+}
+:root .prose .md-timeline > :is(ul, ol) > li {
+  position: relative;
+  padding: 0.5em 0;
+}
+:root .prose .md-timeline > :is(ul, ol) > li::before {
+  content: '';
+  position: absolute;
+  left: -1.68em;
+  top: 1.1em;
+  width: 0.5em;
+  height: 0.5em;
+  background: var(--accent);
+  border: 2px solid var(--background);
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.mindmap-stage {
+  margin: 0;
+}
+.mindmap-canvas {
+  height: 380px;
+  overflow: hidden;
+  position: relative;
+  cursor: grab;
+  touch-action: pan-y;
+  border-radius: 10px;
+}
+.mindmap-transform {
+  transform-origin: center;
+  height: 100%;
+}
+.mindmap-transform > div {
+  height: 100%;
+}
+.mindmap-transform svg {
+  width: 100%;
+  height: 100%;
+  max-width: none !important;
+}
+.mindmap-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+.mindmap-outline {
+  margin-top: 1em;
+  font-size: 0.88em;
+}
+.mindmap-outline > summary {
+  color: var(--accent-text);
+  cursor: pointer;
+}
+.mindmap-transform [data-diagram-variant='dark'] {
+  display: none;
+}
+[data-theme='dark'] .mindmap-transform [data-diagram-variant='light'] {
+  display: none;
+}
+[data-theme='dark'] .mindmap-transform [data-diagram-variant='dark'] {
+  display: block;
+}
+@media (max-width: 600px) {
+  :root .prose :is(.md-comparison, .md-mindmap) {
+    padding: 16px;
+  }
+  .mindmap-canvas {
+    height: 300px;
+  }
+}

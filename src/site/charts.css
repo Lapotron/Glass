@@ -1,0 +1,149 @@
+.chart-viewport {
+  position: relative;
+  width: 100%;
+  height: 360px;
+  overflow: auto hidden;
+  border-radius: 12px;
+  outline-offset: 4px;
+}
+.chart-static {
+  height: 100%;
+}
+.chart-static > div {
+  height: 100%;
+}
+.chart-static svg {
+  display: block;
+  width: 100%;
+  min-width: 720px;
+  height: 100%;
+}
+.chart-static [data-chart-variant='dark'] {
+  display: none;
+}
+[data-theme='dark'] .chart-static [data-chart-variant='light'] {
+  display: none;
+}
+[data-theme='dark'] .chart-static [data-chart-variant='dark'] {
+  display: block;
+}
+.chart-live {
+  width: 100%;
+  height: 100%;
+}
+.chart-tools,
+.chart-legend {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chart-tools {
+  margin: 16px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.chart-tools .button {
+  font-family: var(--font);
+}
+.chart-pan {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font: calc(12px * var(--font-scale))/1.5 var(--font);
+  margin-inline: 4px;
+}
+.chart-legend .chip {
+  cursor: pointer;
+  transition:
+    background 180ms,
+    border-color 180ms;
+  font-variant-numeric: tabular-nums;
+}
+.chart-legend .chip[aria-pressed='false'] {
+  color: var(--faint);
+  text-decoration: line-through;
+}
+.chart-legend .chip[aria-pressed='false'] .series-dot {
+  background: transparent;
+  box-shadow: inset 0 0 0 1px currentColor;
+}
+.chart-legend .series-dot {
+  background: var(--series-light);
+}
+[data-theme='dark'] .chart-legend .series-dot {
+  background: var(--series-dark);
+}
+.chart-status {
+  min-height: 2.8em;
+  font: calc(12px * var(--font-scale))/1.5 var(--font);
+  color: var(--muted);
+  margin: 10px 0 2px;
+}
+.chart-status:empty {
+  display: none;
+}
+.chart-tooltip {
+  white-space: normal !important;
+  box-shadow: none !important;
+  max-width: min(350px, 90vw);
+  pointer-events: none !important;
+}
+.chart-tooltip-body {
+  font: calc(12px * var(--font-scale))/1.8 var(--font);
+  color: var(--text);
+  padding: 11px 14px;
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  background:
+    linear-gradient(145deg, var(--glass-sheen), transparent), rgb(var(--material-tint) / 0.94);
+  backdrop-filter: blur(18px) saturate(145%);
+  box-shadow: var(--shadow-small);
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.chart-tooltip-body > div + div {
+  border-top: 1px solid var(--line);
+  margin-top: 5px;
+  padding-top: 5px;
+}
+html[data-reduce-transparency='true'] .chart-tooltip-body {
+  background: var(--surface-solid);
+  backdrop-filter: none;
+}
+:root .chart-data table {
+  display: table;
+  background: transparent;
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  font: calc(12px * var(--font-scale))/1.7 var(--font);
+  border-top: 1.5px solid var(--muted);
+  border-bottom: 1.5px solid var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+:root .chart-data :is(th, td) {
+  padding: 9px 13px;
+  border: 0;
+  background: transparent;
+  white-space: nowrap;
+  text-align: end;
+}
+:root .chart-data thead {
+  border-bottom: 1px solid var(--line);
+}
+:root .chart-data th:first-child {
+  text-align: start;
+}
+@media (max-width: 680px) {
+  .chart-viewport {
+    height: 320px;
+  }
+  .chart-tools {
+    gap: 6px;
+  }
+  .chart-tools .button {
+    padding: 7px 10px;
+  }
+}

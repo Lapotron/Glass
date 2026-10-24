@@ -1,0 +1,190 @@
+/* Collection and topic indexes share a quiet shell; article and timeline geometry is independent. */
+body[data-page='listing'] {
+  --listing-gutter: 38px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100svh;
+}
+body[data-page='listing'] > :is(.site-header, .site-main, .site-footer, .newsletter-invitation) {
+  width: min(var(--content-width), calc(100% - 2 * var(--listing-gutter)));
+  max-width: var(--content-width);
+  margin-inline: auto;
+  flex-shrink: 0;
+}
+body[data-page='listing'] > .site-main {
+  flex: 1 0 auto;
+  min-width: 0;
+  margin-block: 0;
+  padding-block: 48px 60px;
+}
+.listing-context {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+  margin-bottom: 24px;
+}
+.listing-topic {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--heading);
+  font-size: calc(14px * var(--font-scale));
+  font-weight: 550;
+}
+.listing-topic svg {
+  align-self: center;
+  color: var(--accent-text);
+}
+.listing-context > .text-link {
+  font-size: calc(12px * var(--font-scale));
+}
+.listing-main .archive-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+  grid-template-areas: 'topics search';
+  align-items: start;
+  gap: 16px 28px;
+  margin-bottom: 24px;
+}
+.listing-main .archive-search {
+  grid-area: search;
+  width: 100%;
+}
+.listing-main .archive-tags {
+  grid-area: topics;
+  min-width: 0;
+  padding: 4px;
+  margin: -4px;
+  align-self: center;
+  gap: 8px;
+}
+.listing-main .archive-tags .chip {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+  text-align: start;
+}
+.listing-main .archive-count {
+  margin-bottom: 20px;
+  color: var(--muted);
+  font-size: calc(11px * var(--font-scale));
+  font-variant-numeric: tabular-nums;
+}
+.listing-main .archive-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-content: start;
+  gap: 24px;
+}
+.listing-main .post-feature {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.listing-main .post-feature > a {
+  flex: none;
+}
+.listing-main .archive-grid .post-cover {
+  height: auto;
+  aspect-ratio: 16 / 9;
+}
+.listing-main .archive-grid .post-feature-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  padding: 24px;
+}
+.listing-main .post-meta {
+  color: var(--muted);
+  font-size: calc(11px * var(--font-scale));
+}
+.listing-main .archive-grid .post-feature h3 {
+  font-size: calc(21px * var(--font-scale));
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+.listing-main .post-feature p {
+  font-size: calc(13px * var(--font-scale));
+  overflow-wrap: anywhere;
+}
+.listing-main .post-card-bottom {
+  margin-top: auto;
+  padding-top: 4px;
+  align-items: flex-end;
+}
+.listing-main .post-card-bottom .tags {
+  min-width: 0;
+}
+.listing-main .post-card-bottom .chip {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+.listing-main .round-arrow {
+  flex: none;
+}
+.listing-main :is(.empty-state, .no-results) {
+  padding: 56px 20px;
+}
+:root[data-reduce-motion='true'] .listing-main .post-feature:hover {
+  transform: none;
+}
+@media (max-width: 1000px) {
+  .listing-main .archive-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 900px) {
+  body[data-page='listing'] {
+    --listing-gutter: 25px;
+  }
+}
+@media (max-width: 680px) {
+  body[data-page='listing'] {
+    --listing-gutter: 21px;
+  }
+  body[data-page='listing'] > .site-header {
+    margin-block-start: 20px;
+  }
+  body[data-page='listing'] > .site-main {
+    padding-block: 32px 40px;
+  }
+  .listing-context {
+    margin-bottom: 20px;
+  }
+  .listing-main .archive-tools {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: 'search' 'topics';
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .listing-main .archive-tags {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: thin;
+    padding-block: 4px 8px;
+  }
+  .listing-main .archive-tags .chip {
+    flex: none;
+    max-width: none;
+    white-space: nowrap;
+  }
+  .listing-main .archive-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 20px;
+  }
+  .listing-main .archive-grid .post-feature-body {
+    padding: 22px;
+  }
+  .listing-main .archive-grid .post-feature h3 {
+    font-size: calc(20px * var(--font-scale));
+  }
+  .listing-main :is(.empty-state, .no-results) {
+    padding: 40px 16px;
+  }
+}

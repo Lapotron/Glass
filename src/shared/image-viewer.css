@@ -1,0 +1,320 @@
+@import 'photoswipe/style.css';
+:root dialog.media-viewer {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  overflow: hidden;
+  color: #f4f7ff;
+  --text: #f4f7ff;
+  --muted: #bcc9dc;
+  --faint: #b7c4d8;
+  --material-tint: 36 47 63;
+  --material-opacity: 0.48;
+  --glass-bg: #26344899;
+  --glass-highlight: #ffffff20;
+  --lens-fill: #26344888;
+  --control-hover: #ffffff26;
+  --control-bg: #ffffff12;
+}
+:root dialog.media-viewer::backdrop {
+  background: #08101b99;
+  backdrop-filter: blur(7px);
+}
+.media-viewer .viewer-toolbar,
+.media-viewer .viewer-navigation {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 20;
+  padding: 6px;
+  border-radius: 999px;
+  color: #fff;
+}
+.media-viewer .viewer-toolbar {
+  top: max(20px, env(safe-area-inset-top));
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.media-viewer .viewer-toolbar .icon-button,
+.media-viewer .viewer-navigation .icon-button {
+  color: inherit;
+  width: 40px;
+  height: 40px;
+}
+.viewer-count {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  margin: 0 14px;
+}
+.viewer-caption {
+  position: absolute;
+  bottom: max(26px, env(safe-area-inset-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(65ch, calc(100% - 180px));
+  font-size: 14px;
+  line-height: 1.6;
+  text-align: center;
+  color: #e3eaf6;
+  pointer-events: none;
+  text-wrap: balance;
+}
+.media-viewer .viewer-navigation {
+  right: 22px;
+  bottom: 20px;
+}
+.viewer-error {
+  display: grid;
+  place-content: center;
+  height: 100%;
+  gap: 20px;
+  text-align: center;
+}
+:root .article-body img[role='button'] {
+  cursor: zoom-in;
+}
+:root .article-body img[role='button']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 5px;
+}
+@media (max-width: 600px) {
+  .media-viewer .viewer-toolbar {
+    top: max(12px, env(safe-area-inset-top));
+    padding: 4px;
+  }
+  .viewer-count {
+    margin: 0 10px;
+    font-size: 11px;
+  }
+  .media-viewer .viewer-toolbar .icon-button {
+    width: 35px;
+    height: 35px;
+  }
+  .viewer-caption {
+    bottom: 85px;
+    max-width: calc(100% - 40px);
+    width: 100%;
+    font-size: 12px;
+  }
+  .media-viewer .viewer-navigation {
+    right: 50%;
+    transform: translateX(50%);
+    bottom: max(18px, env(safe-area-inset-bottom));
+  }
+}
+
+:root dialog.media-viewer {
+  animation: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.viewer-loading {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  color: #dce7f6;
+  font-size: 13px;
+}
+
+.media-viewer .viewer-navigation[hidden] {
+  display: none;
+}
+
+/* Diagram sessions inherit the reading theme. The SVG itself stays transparent and sharp. */
+:root dialog.media-viewer[data-viewer-kind='diagram'] {
+  background:color-mix(in srgb,var(--background) 94%,transparent);
+  --text:inherit;
+  --muted:inherit;
+  --faint:inherit;
+  --material-tint:inherit;
+  --material-opacity:inherit;
+  --glass-bg:inherit;
+  --glass-highlight:inherit;
+  --lens-fill:inherit;
+  --control-hover:inherit;
+  --control-bg:inherit;
+  color:var(--text);
+}
+.media-viewer[data-viewer-kind='diagram'] .pswp__bg {background:var(--background);}
+.media-viewer[data-viewer-kind='diagram'] :is(.viewer-toolbar,.viewer-navigation,.viewer-loading,.viewer-information,.viewer-more) {color:var(--text);}
+.media-viewer[data-viewer-kind='diagram'] .viewer-caption {color:var(--muted);}
+.media-viewer[data-viewer-kind='diagram'] .viewer-information-heading {border-color:var(--line);}
+.viewer-diagram {background:transparent;}
+.viewer-diagram > [data-diagram-variant] {width:100%;height:100%;}
+.viewer-diagram svg {display:block;pointer-events:none;user-select:none;}
+.viewer-diagram > [data-diagram-variant='dark'] {display:none;}
+:root[data-theme='dark'] .viewer-diagram > [data-diagram-variant='light'] {display:none;}
+:root[data-theme='dark'] .viewer-diagram > [data-diagram-variant='dark'] {display:block;}
+
+.media-viewer .viewer-extra-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.media-viewer .viewer-information {
+  position: absolute;
+  top: 92px;
+  right: 20px;
+  bottom: 92px;
+  width: min(320px, 34vw);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  color: var(--text);
+  --glass-bg: rgb(var(--material-tint) / 0.84);
+  --dialog-fill: rgb(var(--material-tint) / 0.84);
+}
+.viewer-information-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 16px 12px 20px;
+  border-bottom: 1px solid #ffffff18;
+}
+.viewer-information-heading h2 {
+  font-size: 15px;
+  letter-spacing: -0.02em;
+  margin: 0;
+}
+.viewer-information-body {
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 20px;
+}
+.viewer-facts {
+  margin: 0;
+  display: grid;
+  gap: 6px 16px;
+  grid-template-columns: minmax(70px, auto) minmax(0, 1fr);
+  font-size: 12px;
+  line-height: 1.65;
+}
+.viewer-facts dt {
+  color: var(--muted);
+}
+.viewer-facts dd {
+  margin: 0 0 12px;
+  overflow-wrap: anywhere;
+}
+.viewer-information-caption {
+  font-size: 13px;
+  line-height: 1.7;
+  margin-top: 16px;
+}
+.media-viewer .viewer-more {
+  position: absolute;
+  z-index: 35;
+  top: 80px;
+  right: max(20px, calc((100vw - 500px) / 2));
+  display: grid;
+  width: 220px;
+  padding: 8px;
+  border-radius: 18px;
+}
+.media-viewer .viewer-menu-action {
+  width: 100%;
+  height: auto;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: start;
+  gap: 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  padding: 8px 12px;
+  font-size: 12px;
+  color: var(--text);
+  text-align: left;
+}
+.media-viewer .viewer-menu-action:hover {
+  background: var(--control-hover);
+}
+.media-viewer .viewer-action-status {
+  position: absolute;
+  z-index: 30;
+  top: 88px;
+  left: 20px;
+  max-width: min(400px, calc(100vw - 40px));
+  margin: 0;
+  padding: 10px 14px;
+  border-radius: 12px;
+  background: #182333ed;
+  color: #edf3ff;
+  font-size: 12px;
+}
+.viewer-action-status a {
+  text-decoration: underline;
+}
+.media-viewer[data-info-open='true'] .viewer-caption {
+  left: calc((100% - min(320px, 34vw) - 40px) / 2);
+  max-width: min(55ch, calc(100% - min(320px, 34vw) - 180px));
+}
+@media (max-width: 600px) {
+  .media-viewer .viewer-toolbar > .viewer-zoom-control {
+    display: none;
+  }
+  .media-viewer .viewer-toolbar .icon-button {
+    width: 40px;
+    height: 40px;
+  }
+  .media-viewer .viewer-more {
+    top: 68px;
+    right: 16px;
+  }
+  .media-viewer .viewer-information {
+    top: auto;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    max-height: 52dvh;
+    border-radius: 24px 24px 0 0;
+  }
+  .media-viewer .viewer-information-body {
+    padding-bottom: max(20px, env(safe-area-inset-bottom));
+  }
+  .media-viewer[data-info-open='true'] .viewer-navigation {
+    bottom: calc(52dvh + 10px);
+  }
+  .media-viewer[data-info-open='true'] .viewer-caption {
+    display: none;
+  }
+}
+/* PhotoSwipe's default root z-index otherwise covers sibling information/actions. */
+.media-viewer .pswp {
+  z-index: 1;
+}
+@media (max-width: 600px) {
+  .media-viewer .viewer-information {
+    width: 100%;
+  }
+}
+
+.media-viewer .viewer-viewport {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+.media-viewer .viewer-viewport:fullscreen {
+  width: 100vw;
+  height: 100dvh;
+  background: #080d15;
+}

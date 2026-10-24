@@ -1,0 +1,209 @@
+.projects-page {
+  padding-block: clamp(24px, 5vw, 64px);
+}
+.projects-intro {
+  max-width: 680px;
+  margin-bottom: 40px;
+}
+.projects-intro .eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.projects-intro h1 {
+  font-size: clamp(2.4rem, 6vw, 4.5rem);
+  letter-spacing: -0.055em;
+  line-height: 1.05;
+  margin: 0.4em 0;
+}
+.projects-intro p {
+  font-size: calc(1.1rem * var(--font-scale));
+  color: var(--muted);
+  line-height: 1.7;
+}
+.projects-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+}
+.project-card {
+  padding: 0;
+  overflow: hidden;
+  transition:
+    border-color 0.25s,
+    box-shadow 0.25s;
+  box-shadow:
+    var(--glass-shadow),
+    inset 0 1px var(--rim-light);
+}
+.project-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--glass-border));
+  box-shadow:
+    var(--card-hover-shadow),
+    inset 0 1px var(--rim-light);
+}
+.project-image {
+  display: block;
+  aspect-ratio: 16/9;
+  overflow: hidden;
+}
+.project-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.55s var(--ease-glass);
+}
+.project-image:hover img {
+  transform: scale(1.025);
+}
+.project-content {
+  padding: clamp(20px, 3vw, 32px);
+}
+.project-content h2 {
+  font-size: calc(1.45rem * var(--font-scale));
+  letter-spacing: -0.035em;
+  line-height: 1.2;
+  margin: 16px 0 12px;
+}
+.project-content p {
+  color: var(--muted);
+  line-height: 1.75;
+  white-space: pre-line;
+}
+.project-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: calc(0.73rem * var(--font-scale));
+  color: var(--muted);
+  font-weight: 600;
+}
+.project-status i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+.project-status[data-status='maintained'] i,
+.project-status[data-status='complete'] i {
+  background: var(--success);
+}
+.project-status[data-status='paused'] i,
+.project-status[data-status='archived'] i {
+  background: var(--faint);
+}
+.project-technologies {
+  list-style: none;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 20px 0;
+}
+.project-technologies li {
+  font: 500 calc(0.72rem * var(--font-scale))/1.4 var(--mono);
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: var(--chip-bg);
+  border: 1px solid var(--line);
+  color: var(--muted);
+}
+.project-links {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+.project-links .text-link {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+}
+.projects-empty {
+  padding: 40px;
+  color: var(--muted);
+}
+.projects-empty h2 {
+  color: var(--heading);
+}
+@media (max-width: 640px) {
+  .projects-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  .projects-intro {
+    margin-bottom: 28px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-image img {
+    transition: none;
+  }
+}
+.search-page {
+  max-width: 960px;
+  margin: 40px auto;
+}
+.search-page h1 {
+  font-size: clamp(2.5rem, 6vw, 4rem);
+  letter-spacing: -0.05em;
+}
+.search-page [data-search-page] {
+  padding: 8px 20px 20px;
+}
+.search-filters {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 20px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.search-filters label {
+  display: grid;
+  gap: 5px;
+  font-size: calc(0.72rem * var(--font-scale));
+  color: var(--muted);
+  flex: 1;
+  min-width: 110px;
+}
+.search-filters select {
+  min-height: 34px;
+  padding: 6px 10px;
+}
+.search-summary {
+  margin: 12px 20px;
+  color: var(--faint);
+  font-size: calc(0.76rem * var(--font-scale));
+}
+.search-result mark {
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  border-radius: 3px;
+  padding: 1px 0;
+}
+.search-pagination {
+  display: flex;
+  gap: 16px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.search-pagination a {
+  margin-left: auto;
+}
+.search-section {
+  display: block;
+  padding: 5px 24px 12px;
+  font-size: calc(0.83rem * var(--font-scale));
+  color: var(--link-text);
+}
+.search-dialog {
+  max-height: min(85dvh, 860px);
+  overflow: auto;
+}
+.search-page .search-results {
+  max-height: none;
+}

@@ -1,0 +1,529 @@
+/* Paper is an independent material. Keep these rules last in content-style. */
+@media print {
+  @page {
+    size: auto;
+    margin: 18mm;
+  }
+  :root {
+    color-scheme: light !important;
+    --text: #171717 !important;
+    --heading: #000 !important;
+    --muted: #333 !important;
+    --faint: #444 !important;
+    --link-text: #111 !important;
+    --accent-text: #222 !important;
+    --line: #aaa !important;
+    --inset-bg: transparent !important;
+    --accent-soft: transparent !important;
+    --font-scale: 1 !important;
+    --reader-text-scale: 1 !important;
+  }
+  html,
+  body {
+    background: #fff !important;
+    color: #171717 !important;
+  }
+  html::before,
+  html::after,
+  body::before,
+  body::after,
+  :is(
+    .site-header,
+    .site-footer,
+    .article-back,
+    .article-progress,
+    .article-end,
+    .post-outline,
+    .article-focus-exit,
+    .article-discussion-tools,
+    .article-conversations,
+    .section-thread,
+    .discussion-unavailable,
+    .line-discussion-popover,
+    .line-discussion-trigger,
+    .line-annotation-badge,
+    .line-discussion-tooltip,
+    .article-related,
+    .newsletter-invitation,
+    .article-footer-group,
+    .article-bottom,
+    .article-footer-facts [data-article-fact='published'],
+    .article-footer-facts [data-article-fact='reading'],
+    .navigation-progress,
+    .viewer-loading,
+    .skip-link,
+    .copy-code,
+    .cover-view-hint,
+    dialog,
+    .pswp,
+    .md-tab-buttons,
+    .widget-tab-list,
+    .quiz-actions,
+    .quiz-feedback,
+    .widget-controls,
+    .plot-controls,
+    .chart-live,
+    .chart-tools,
+    .chart-status,
+    .mindmap-toolbar,
+    .mindmap-tools,
+    .mindmap-status,
+    .diagram-source,
+    .diagram-view,
+    .chart-data,
+    .compare-handle,
+    [data-article-focus-toggle],
+    .data-protected-contact,
+    [data-liquid-definitions]
+  ) {
+    display: none !important;
+  }
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    transition: none !important;
+    text-shadow: none !important;
+  }
+  :is(.site-main, .article-shell, .article-layout, .article-content, .article-body) {
+    display: block !important;
+    width: auto !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+  }
+  :is(.glass, .glass-panel, .liquid-lens, .reading-surface, .interactive, .diagram) {
+    background: none !important;
+    box-shadow: none !important;
+    border-radius: 0 !important;
+    border: 0 !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    filter: none !important;
+  }
+  :is(.glass, .glass-panel, .liquid-lens)::before,
+  :is(.glass, .glass-panel, .liquid-lens)::after {
+    display: none !important;
+  }
+  .material-playground {
+    min-height: 0;
+    overflow: visible;
+    padding: 3mm;
+    border: 0.2mm solid #bbb;
+    border-radius: 0;
+    background: none;
+    break-inside: avoid-page;
+  }
+  .material-playground :is(.material-scene-image, .material-grid) {
+    display: none !important;
+  }
+  .material-playground .material-demo-lens {
+    position: static;
+    transform: none;
+    width: auto;
+    padding: 0;
+    color: #171717;
+  }
+  .article-header {
+    padding: 0 0 6mm;
+    margin: 0 0 6mm;
+    border-bottom: 0.3mm solid #333;
+  }
+  .article-header h1 {
+    color: #000;
+    font-size: 27pt !important;
+    letter-spacing: -0.025em;
+    line-height: 1.2;
+    margin: 0 0 4mm;
+  }
+  .article-header .tags,
+  .article-header .meta-item,
+  .article-header .meta-divider {
+    display: none;
+  }
+  .article-summary {
+    font-size: 11.5pt !important;
+    line-height: 1.55;
+    max-width: none;
+    margin: 0 0 3mm;
+  }
+  .article-header .post-meta {
+    font-size: 9pt;
+    color: #333;
+  }
+  :root .article-body {
+    font: 11pt/1.6 var(--reading-font);
+    overflow-wrap: anywhere;
+  }
+  :root .prose :is(h2, h3, h4, h5, h6) {
+    color: #111;
+    break-after: avoid-page;
+    line-height: 1.35;
+    margin: 6mm 0 3mm;
+  }
+  :root .prose h2 {
+    font-size: 17pt;
+  }
+  :root .prose h3 {
+    font-size: 13.5pt;
+  }
+  :root .prose :is(h4, h5, h6) {
+    font-size: 11.5pt;
+  }
+  :root .prose :is(p, ul, ol, dl) {
+    margin-block: 0 3.5mm;
+  }
+  p,
+  li {
+    orphans: 3;
+    widows: 3;
+  }
+  :root .prose :is(a, .md-reference, .md-citation) {
+    color: #111;
+    text-decoration: underline;
+    text-decoration-thickness: 0.15mm;
+  }
+  :root
+    .prose
+    :is(
+      blockquote,
+      .md-alert,
+      .md-question,
+      .md-answer,
+      .md-theorem,
+      .md-lemma,
+      .md-proposition,
+      .md-corollary,
+      .md-definition,
+      .md-example,
+      .md-algorithm,
+      .md-proof
+    ) {
+    background: none;
+    border: 0;
+    border-inline-start: 0.4mm solid #777;
+    border-radius: 0;
+    padding: 1mm 0 1mm 4mm;
+    margin: 4mm 0;
+    box-shadow: none;
+  }
+  :root
+    .prose
+    :is(.md-details, .md-tabs, .md-discussion, .md-comparison, .md-mindmap, .md-link-card) {
+    padding: 3mm 0;
+    margin: 4mm 0;
+    border: 0;
+    border-radius: 0;
+    background: none;
+    box-shadow: none;
+  }
+  :root .prose .md-component-title {
+    font-size: 10pt;
+    margin: 0 0 2mm;
+    color: #222;
+  }
+  .article-body details::details-content {
+    content-visibility: visible !important;
+    height: auto !important;
+  }
+  .article-body details > summary {
+    font-weight: 600;
+    margin-bottom: 2mm;
+    list-style: none;
+  }
+  .article-body details > summary::marker {
+    content: '';
+  }
+  .md-tab[hidden],
+  .widget-tab-panel[hidden],
+  .md-tab > .md-component-title[hidden] {
+    display: block !important;
+  }
+  :root .prose .code-block {
+    margin: 4mm 0;
+    background: none;
+    border-radius: 0;
+  }
+  :root .prose pre {
+    font: 8.5pt/1.5 var(--mono);
+    white-space: pre-wrap !important;
+    overflow: visible !important;
+    overflow-wrap: anywhere;
+    padding: 3mm;
+    border: 0.2mm solid #bbb;
+    border-radius: 0;
+    background: none !important;
+    break-inside: auto;
+  }
+  :root .prose pre :is(code, span) {
+    background: none !important;
+    color: #222 !important;
+    white-space: inherit;
+  }
+  :root .prose code {
+    font-size: 0.85em;
+    background: none;
+    color: inherit;
+  }
+  :root .prose :is(.prose-table-scroll, .table-scroll) {
+    overflow: visible !important;
+    max-height: none;
+    margin-block: 4mm;
+  }
+  :root .prose table {
+    display: table;
+    width: 100%;
+    table-layout: auto;
+    border-collapse: collapse;
+    font-size: 9pt;
+    line-height: 1.4;
+    border-top: 0.4mm solid #222;
+    border-bottom: 0.4mm solid #222;
+    background: none;
+  }
+  :root .prose thead {
+    display: table-header-group;
+    border-bottom: 0.25mm solid #555;
+  }
+  :root .prose tfoot {
+    display: table-footer-group;
+  }
+  :root .prose tr {
+    break-inside: avoid-page;
+    background: none;
+  }
+  :root .prose :is(th, td) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+    padding: 2mm 2.5mm;
+    border: 0;
+    background: none;
+    color: #111;
+  }
+  :root .prose :is(figure, .interactive, .diagram) {
+    margin: 5mm 0;
+    padding: 0;
+    break-inside: auto;
+  }
+  :root .prose :is(img, .math-display, .mermaid-canvas, .plot-svg, .chart-static, .comparison) {
+    break-inside: avoid-page;
+  }
+  :root :is(.article-body, .article-cover-figure) img {
+    max-width: 100%;
+    max-height: 190mm;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .article-cover-figure {
+    margin: 0 0 6mm;
+    break-inside: avoid-page;
+  }
+  :root .prose .md-figure[data-image-max-height] img {
+    max-height: min(var(--figure-max-height), 190mm);
+  }
+  .article-cover-figure :is(a, picture) {
+    display: block;
+  }
+  .article-cover-figure .article-cover {
+    max-height: 65mm;
+    width: 100%;
+    aspect-ratio: auto;
+    margin: 0;
+  }
+  :root .prose figcaption,
+  .article-cover-figure figcaption {
+    font-size: 9pt;
+    line-height: 1.5;
+    color: #333;
+    margin: 2mm 0 0;
+    break-before: avoid-page;
+  }
+  .diagram > figcaption {
+    break-after: avoid-page;
+    break-before: auto;
+  }
+  .math-display {
+    overflow: visible !important;
+    max-width: 100%;
+  }
+  .math-display svg {
+    max-width: 100%;
+    height: auto;
+  }
+  :is(
+    [data-diagram-variant='light'],
+    [data-chart-variant='light'],
+    .chart-static,
+    .chart-static[hidden]
+  ) {
+    display: block !important;
+  }
+  :is([data-diagram-variant='dark'], [data-chart-variant='dark']) {
+    display: none !important;
+  }
+  :is(.chart-viewport, .chart-static, .chart-static > div, .mindmap-canvas, .mermaid-canvas) {
+    height: auto !important;
+    overflow: visible !important;
+    border: 0;
+    background: none;
+  }
+  :is(.chart-static, .mermaid-canvas, .mindmap-transform, .mindmap-print-map) svg {
+    width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    max-height: 150mm;
+  }
+  .chart-legend {
+    pointer-events: none;
+    margin-bottom: 2mm;
+  }
+  .chart-legend .chip {
+    font-size: 8pt;
+    padding: 1mm;
+    border: 0;
+    text-decoration: none !important;
+    color: #222;
+  }
+  .mindmap-transform {
+    position: static !important;
+    transform: none !important;
+    width: auto !important;
+  }
+  .mindmap-print-map {
+    display: block !important;
+  }
+  .mindmap-stage[data-map-ready] .mindmap-transform {
+    display: none !important;
+  }
+  .mindmap-outline {
+    margin-top: 3mm;
+    font-size: 9pt;
+  }
+  .mindmap-print-placeholder {
+    height: auto !important;
+  }
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2mm 4mm;
+    height: auto !important;
+    aspect-ratio: auto;
+    overflow: visible;
+    background: none;
+    border-radius: 0;
+  }
+  .comparison > img {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .comparison-before {
+    grid-column: 1;
+    grid-row: 1;
+    position: static !important;
+    width: auto !important;
+    height: auto !important;
+    clip-path: none !important;
+    overflow: visible;
+  }
+  .comparison img,
+  .comparison-before img {
+    display: block;
+    width: 100% !important;
+    height: auto !important;
+    max-height: 100mm !important;
+    object-fit: contain;
+    position: static;
+  }
+  .compare-label {
+    position: static;
+    color: #333;
+    background: none;
+    font-size: 9pt;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .compare-label.before {
+    grid-column: 1;
+    grid-row: 2;
+  }
+  .compare-label.after {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .quiz-options label {
+    background: none;
+    padding: 1mm 0;
+  }
+  .quiz-options input {
+    display: none;
+  }
+  .quiz-options label::before {
+    content: '○';
+    margin-inline-end: 2mm;
+  }
+  .quiz-solution {
+    border-top: 0.2mm solid #aaa;
+    margin-top: 3mm;
+    padding-top: 3mm;
+  }
+  .quiz-solution summary {
+    font-size: 0;
+  }
+  .quiz-solution summary::after {
+    content: 'Explanation';
+    font-size: 10pt;
+  }
+  .widget-controls + svg,
+  .plot-svg {
+    max-height: 100mm;
+    width: 100%;
+    height: auto;
+  }
+  .md-gallery {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 4mm !important;
+  }
+  .md-gallery > * {
+    break-inside: avoid-page;
+  }
+  .md-references,
+  [data-footnotes] {
+    border-top: 0.25mm solid #888;
+    margin-top: 6mm;
+    padding-top: 3mm;
+    font-size: 9pt;
+  }
+  [data-footnote-backref] {
+    display: none;
+  }
+  .article-print-source {
+    display: block;
+    font: 8pt/1.5 var(--font);
+    overflow-wrap: anywhere;
+    color: #444;
+    margin: 3mm 0;
+  }
+  .article-print-meta {
+    display: block;
+    color: #333;
+    font-size: 9pt;
+    margin: 2mm 0;
+  }
+  .article-body .code-block.pseudocode-block {
+    background: transparent !important;
+    box-shadow: none !important;
+    break-inside: auto;
+    border-inline: 0;
+    border-radius: 0;
+  }
+  .pseudocode-block .pseudo-lines { overflow: visible; font-size: 10pt; }
+  .pseudocode-block.pseudo-code .pseudo-lines { font-size: 9pt; }
+  .pseudo-line { min-width: 0; break-inside: avoid; }
+  .pseudo-line > .pseudo-code { white-space: pre-wrap; }
+  .pseudo-gutter { position: static; }
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "../../../node_modules/wrangler/config-schema.json",
+  "name": "glass-site",
+  "main": "../../../.studio/cloud/site/worker.mjs",
+  "compatibility_date": "2026-10-12",
+  "assets": {
+    "directory": "../../../.studio/cloud/site/public",
+    "binding": "ASSETS",
+    "not_found_handling": "404-page",
+  },
+  "previews": {},
+}

@@ -1,0 +1,63 @@
+{
+  "photos": [
+    {
+      "id": "coast",
+      "src": "/media/coast-dawn.svg",
+      "alt": "Original illustration of a pale sun rising over a quiet blue coastline",
+      "caption": "Where the sea meets the morning",
+      "album": "Coastlines",
+      "takenAt": "2026-10-12",
+      "demo": true
+    },
+    {
+      "id": "mountains",
+      "src": "/media/alpine.svg",
+      "alt": "Original illustration of layers of alpine peaks beneath a lavender sky",
+      "caption": "A little further from the noise",
+      "album": "Quiet places",
+      "takenAt": "2026-10-09",
+      "demo": true
+    },
+    {
+      "id": "dunes",
+      "src": "/media/dunes.svg",
+      "alt": "Original illustration of warm sand dunes in soft evening light",
+      "caption": "The slow work of wind",
+      "album": "Quiet places",
+      "takenAt": "2026-10-05",
+      "demo": true
+    },
+    {
+      "id": "coast-dusk",
+      "src": "/media/coast-dusk.svg",
+      "alt": "Original illustration of a blue coastline under a pink evening sky",
+      "caption": "One last shade of blue",
+      "album": "Coastlines",
+      "takenAt": "2026-10-02",
+      "demo": true
+    }
+  ],
+  "news": [
+    {
+      "id": "news-1",
+      "date": "2026-10-16",
+      "text": "A new notebook, and a little more room for curiosity.",
+      "href": "/blog/a-small-case-for-curiosity/",
+      "demo": true
+    },
+    {
+      "id": "news-2",
+      "date": "2026-10-11",
+      "text": "Added the first experiment: a small playground for waves.",
+      "href": "/lab/the-shape-of-a-wave/",
+      "demo": true
+    },
+    {
+      "id": "news-3",
+      "date": "2026-10-05",
+      "text": "Collected a few quiet landscapes in the photo journal.",
+      "href": "/life/",
+      "demo": true
+    }
+  ]
+}

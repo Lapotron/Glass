@@ -1,0 +1,138 @@
+.aca-earth {
+  padding: 22px;
+  overflow: hidden;
+  position: relative;
+}
+.aca-earth .aca-section-head {
+  margin-bottom: 16px;
+}
+.aca-earth h2 {
+  margin: 4px 0 0;
+}
+.aca-earth-filters {
+  display: flex;
+  align-items: end;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.aca-earth-filters label {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+}
+.aca-earth-filters select {
+  min-width: 150px;
+}
+.aca-earth-filters .help {
+  margin-left: auto;
+  align-self: center;
+}
+.aca-earth-stage {
+  position: relative;
+  min-height: 330px;
+  background: radial-gradient(
+    ellipse at center,
+    rgb(var(--accent-rgb, 91 133 177) / 0.09),
+    transparent 65%
+  );
+  outline-offset: -4px;
+  border-radius: 24px;
+}
+.aca-earth-stage canvas {
+  display: block;
+  border-radius: 24px;
+  touch-action: none;
+}
+.aca-earth-loading {
+  position: absolute;
+  inset: 40% 0 auto;
+  text-align: center;
+  color: var(--muted);
+}
+.aca-earth-loading[hidden] {
+  display: none;
+}
+.aca-earth-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.aca-earth-controls .help {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.aca-earth-selection {
+  display: flex;
+  gap: 10px 20px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.aca-earth-selection span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.aca-earth-credit {
+  font-size: 10px;
+  color: var(--muted);
+  margin: 18px 0 0;
+}
+.aca-earth-tooltip {
+  display: grid;
+  gap: 5px;
+  padding: 12px 15px;
+  border-radius: 14px;
+  color: var(--text);
+  background: var(--dialog-fill);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(20px);
+  box-shadow: var(--shadow);
+  font: 12px/1.5 var(--font-ui);
+}
+.aca-earth-tooltip strong {
+  font-weight: 600;
+}
+.aca-earth-tooltip span {
+  color: var(--muted);
+}
+.aca-earth-map {
+  width: 100%;
+  height: auto;
+  margin: 20px 0;
+  color: var(--muted);
+  background: radial-gradient(ellipse, rgb(70 133 165 / 0.08), transparent);
+}
+.aca-earth-map circle {
+  cursor: pointer;
+  stroke: var(--surface-solid);
+  stroke-width: 1;
+}
+@media (max-width: 600px) {
+  .aca-earth {
+    padding: 16px 12px;
+  }
+  .aca-earth .aca-section-head {
+    align-items: start;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .aca-earth-controls .help,
+  .aca-earth-filters .help {
+    margin-left: 0;
+  }
+  .aca-earth-filters label {
+    flex: 1;
+    min-width: 110px;
+  }
+  .aca-earth-filters select {
+    min-width: 0;
+    width: 100%;
+  }
+}
+
+.aca-earth .scene-tooltip { background: transparent !important; padding: 0; border: 0; }.aca-earth-tooltip { font: inherit; font-size: 12px; line-height: 1.5; }

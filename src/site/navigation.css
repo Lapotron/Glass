@@ -1,0 +1,234 @@
+@view-transition {
+  navigation: auto;
+}
+.site-header {
+  view-transition-name: site-navigation;
+}
+/* Fade a separate veil, never an ancestor of the refractive surfaces. An opacity
+   animation on main creates a backdrop root that flattens the glass beneath it. */
+html::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  background: var(--background);
+  opacity: 0;
+  animation: page-arrive 480ms var(--ease-glass) both;
+}
+@keyframes page-arrive {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+@keyframes page-depart {
+  to {
+    opacity: 0;
+    transform: translateY(-6px);
+    filter: blur(2px);
+  }
+}
+@keyframes page-unfold {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+::view-transition-old(root) {
+  animation: page-depart 200ms ease-out both;
+}
+::view-transition-new(root) {
+  animation: page-unfold 460ms var(--ease-glass) both;
+}
+::view-transition-group(site-navigation) {
+  animation-duration: 460ms;
+  animation-timing-function: var(--ease-glass);
+}
+::view-transition-old(site-navigation) {
+  animation: none;
+  opacity: 0;
+}
+::view-transition-new(site-navigation) {
+  animation: none;
+}
+:active-view-transition::before {
+  animation: none;
+  opacity: 0;
+}
+.site-nav {
+  position: relative;
+  isolation: isolate;
+}
+.header-navigation { display: contents; }
+.header-tools-mobile { display: none; }
+@media (max-width: 680px) {
+  .tools-shortcut { display: none; }
+  .header-navigation:has(.mobile-open) { display: block; position: absolute; top: 72px; left: 0; right: 0; padding: 12px; border-radius: 22px; }
+  .header-navigation .site-nav.mobile-open { position: relative; top: auto; left: auto; right: auto; padding: 0; border: 0; box-shadow: none; background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; animation: none; }
+  .header-navigation:has(.mobile-open) .header-tools-mobile { display: flex; align-items: center; border-top: 1px solid var(--line); margin-top: 8px; padding: 12px 17px 4px; }
+}
+.site-nav a {
+  position: relative;
+  z-index: 1;
+  border: 1px solid transparent;
+  transition:
+    color 180ms,
+    background 180ms,
+    scale 300ms var(--ease-glass-spring);
+}
+.site-nav a:hover,
+.site-nav a:focus-visible {
+  color: var(--text);
+}
+.nav-lens {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: var(--nav-width, 0px);
+  height: var(--nav-height, 0px);
+  transform: translate3d(var(--nav-x, 0px), var(--nav-y, 0px), 0);
+  border-radius: var(--radius-pill);
+  pointer-events: none;
+  opacity: 0;
+}
+.nav-lens::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: inherit;
+  background:
+    radial-gradient(
+      ellipse at var(--nav-light-x, 50%) var(--nav-light-y, 35%),
+      var(--glass-sheen),
+      transparent 75%
+    ),
+    var(--button-bg);
+  box-shadow:
+    0 3px 12px #1734570d,
+    inset 0 1px 0 var(--glass-highlight),
+    inset 0 -1px 0 var(--glass-bottom);
+}
+.site-nav[data-nav-enhanced] .nav-lens {
+  transition:
+    transform 460ms var(--ease-glass-spring),
+    width 460ms var(--ease-glass-spring),
+    height 460ms var(--ease-glass-spring),
+    opacity 180ms;
+}
+.site-nav[data-nav-enhanced] .nav-lens::before {
+  transition:
+    scale 280ms var(--ease-glass-spring),
+    box-shadow 220ms;
+}
+.site-nav[data-nav-target] .nav-lens {
+  opacity: 1;
+}
+.site-nav[data-nav-hover='true'] .nav-lens::before {
+  scale: 1.035 1.055;
+  box-shadow:
+    0 5px 16px #17345718,
+    inset 0 1px 0 var(--rim-light),
+    inset 0 -1px 0 var(--rim-mid);
+}
+.site-nav[data-nav-press='true'] .nav-lens::before {
+  scale: 0.96 0.94;
+}
+:root .site-nav[data-nav-enhanced] a,
+:root .site-nav[data-nav-enhanced] a[aria-current='page'] {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.site-nav a[aria-current='page'] {
+  font-weight: 550;
+}
+.navigation-progress {
+  position: fixed;
+  inset: 0 0 auto;
+  height: 2px;
+  z-index: 100;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+}
+.navigation-progress::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  transform: translateX(-100%);
+}
+html[data-navigating='true'] .navigation-progress {
+  opacity: 1;
+}
+html[data-navigating='true'] .navigation-progress::before {
+  animation: navigation-loading 1200ms ease-in-out infinite;
+}
+@keyframes navigation-loading {
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (max-width: 680px) {
+  .site-nav.mobile-open {
+    background: var(--reading-bg);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    backdrop-filter: blur(18px) saturate(160%);
+    animation: menu-unfold 300ms var(--ease-glass) backwards;
+    transform-origin: top right;
+  }
+  @keyframes menu-unfold {
+    from {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.97);
+    }
+  }
+}
+html[data-reduce-transparency='true'] .nav-lens::before {
+  background: var(--surface-solid);
+  border-color: var(--line);
+}
+@media (prefers-reduced-transparency: reduce), (prefers-contrast: more) {
+  .nav-lens::before,
+  .site-nav.mobile-open {
+    background: var(--surface-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  @view-transition {
+    navigation: none;
+  }
+  html::before,
+  .site-nav.mobile-open,
+  html[data-navigating='true'] .navigation-progress::before {
+    animation: none;
+  }
+  html::before {
+    display: none;
+  }
+  .site-nav[data-nav-enhanced] .nav-lens {
+    transition: opacity 100ms;
+  }
+  .site-nav[data-nav-enhanced] .nav-lens::before {
+    transition: none;
+    scale: 1;
+  }
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none;
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "projects": [
+    {
+      "id": "glass",
+      "title": "Glass",
+      "description": "A personal publishing space with a private Markdown Studio and a fast static reader. Replace this example with something you are building.",
+      "technologies": [
+        "TypeScript",
+        "React",
+        "Cloudflare"
+      ],
+      "status": "active",
+      "visibility": "public",
+      "image": "/media/workspace.svg",
+      "imageAlt": "Illustration of a quiet workspace",
+      "links": [
+        {
+          "label": "Source code",
+          "url": "https://github.com/Lapotron/Glass"
+        }
+      ],
+      "github": "Lapotron/Glass"
+    }
+  ]
+}

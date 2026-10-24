@@ -1,0 +1,3 @@
+Earth textures are resized WebP derivatives of the NASA Blue Marble / Earth imagery distributed in three-globe's example/img directory (earth-blue-marble.jpg, earth-night.jpg and earth-topology.png). Source: https://github.com/vasturiano/three-globe/tree/master/example/img . NASA imagery guidance: https://www.nasa.gov/nasa-brand-center/images-and-media/ . These assets are bundled locally for the private Studio; no texture/CDN request is made by readers.
+
+The fallback outline is an equirectangular projection of Natural Earth 1:110m country geometry distributed with three-globe. Natural Earth data is public domain: https://www.naturalearthdata.com/about/terms-of-use/ .

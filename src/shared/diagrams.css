@@ -1,0 +1,112 @@
+/* The drawing is an image-like part of the reading flow, not another optical panel. */
+:root .article-body .diagram[data-mermaid],
+:root .prose .diagram[data-mermaid] {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px 12px;
+  padding: 0;
+  margin: 1.5em 0;
+  min-width: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transform: none;
+}
+.diagram[data-mermaid]::before,
+.diagram[data-mermaid]::after {
+  display: none;
+}
+.diagram[data-mermaid] .mermaid-canvas {
+  grid-column: 1/-1;
+  grid-row: 1;
+  margin: 0;
+  overflow: auto;
+  text-align: center;
+  min-width: 0;
+}
+.diagram[data-mermaid] .mermaid-canvas svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+  background: transparent;
+}
+.diagram[data-mermaid][data-viewer-ready] .mermaid-canvas {
+  cursor: zoom-in;
+}
+:root .prose .diagram[data-mermaid] > figcaption {
+  grid-column: 1/-1;
+  grid-row: 2;
+  padding: 0;
+  margin: 4px 0;
+  color: var(--muted);
+  border: 0;
+  font: 400 0.78em/1.6 var(--reading-font, var(--font));
+}
+.diagram[data-mermaid] .diagram-source {
+  grid-column: 1/-1;
+  grid-row: 3;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  min-width: 0;
+  font: 400 12px/1.6 var(--font);
+  color: var(--muted);
+}
+.diagram[data-mermaid] .diagram-source summary {
+  padding: 6px 0;
+  max-width: calc(100% - 120px);
+  width: fit-content;
+  cursor: pointer;
+}
+.diagram[data-mermaid] .diagram-source pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.diagram-view {
+  grid-column: 2;
+  grid-row: 3;
+  align-self: start;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 5px 10px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-pill);
+  color: var(--muted);
+  font: 500 11px/1.4 var(--font);
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+.diagram-view svg {
+  flex: none;
+}
+.diagram-view:hover {
+  color: var(--heading);
+  border-color: var(--accent-text);
+}
+.diagram-view:focus-visible {
+  outline: 2px solid var(--accent-text);
+  outline-offset: 3px;
+}
+[data-reduce-transparency='true'] [data-diagram-surface] {
+  fill: var(--surface-solid) !important;
+  stroke: var(--muted) !important;
+}
+@media (max-width: 600px) {
+  .diagram-view {
+    min-height: 40px;
+  }
+  .diagram[data-mermaid] .diagram-source summary {
+    padding-block: 10px;
+  }
+}

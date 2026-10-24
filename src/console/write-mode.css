@@ -1,0 +1,83 @@
+/* Write-only geometry; Split and About retain their existing layouts. */
+.editor-workspace.mode-write {
+  --writing-column: 900px;
+  --writing-inset: 32px;
+  --source-font-size: calc(14px * var(--font-scale));
+  --source-leading: 1.9;
+  --source-padding-top: 24px;
+  --source-padding-bottom: 120px;
+}
+
+.editor-workspace.mode-write :is(.editor-toolbar, .editor-source-tools, .editor-foot) {
+  flex-shrink: 0;
+}
+
+.editor-workspace.mode-write .editor-toolbar .icon-button {
+  width: 32px;
+  height: 32px;
+}
+
+.editor-workspace.mode-write .editor-breadcrumb {
+  font-size: calc(11px * var(--font-scale));
+  min-width: 0;
+}
+
+.editor-workspace.mode-write :is(.code-editor-wrap, .editor-foot) {
+  width: 100%;
+  max-width: var(--writing-column);
+  margin-inline: auto;
+}
+
+.editor-workspace.mode-write .editor-tool-error {
+  padding-inline: var(--writing-inset);
+}
+
+.editor-workspace.mode-write .code-editor {
+  width: 100%;
+}
+
+.editor-workspace.mode-write .cm-editor:not(.cm-focused) :is(.cm-activeLine, .cm-activeLineGutter) {
+  background: transparent;
+}
+
+.editor-workspace.mode-write .editor-foot {
+  flex-wrap: nowrap;
+  gap: 8px;
+  padding: 6px var(--writing-inset);
+  font-size: calc(10px * var(--font-scale));
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.editor-workspace.mode-write .editor-foot .source-position {
+  min-width: 0;
+}
+.editor-workspace.mode-write .source-position > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+@container markdown-editor (max-width: 520px) {
+  .editor-workspace.mode-write .editor-foot :is(.editor-save-label, .source-selection) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  .editor-workspace.mode-write {
+    --writing-inset: 16px;
+    --source-font-size: calc(13px * var(--font-scale));
+    --source-padding-top: 20px;
+    --source-padding-bottom: 80px;
+  }
+
+  .editor-workspace.mode-write .editor-foot {
+    padding-block: 6px;
+  }
+}

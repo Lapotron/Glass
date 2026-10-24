@@ -1,0 +1,41 @@
+{
+  "$schema": "../../node_modules/wrangler/config-schema.json",
+  "name": "glass-aca",
+  "main": "../../src/aca/worker.ts",
+  "compatibility_date": "2026-10-12",
+  "workers_dev": true,
+  "vars": {
+    "ENABLED": "false",
+    "SITE_ID": "glass",
+    "SITE_ORIGIN": "https://example.com",
+    "MAX_DAILY_BATCHES": "1000",
+    "DAILY_NETWORKS": "true",
+    "IDENTITY_MODE": "anonymous",
+    "DAILY_READ_BUDGET": "2000000",
+    "DAILY_WRITE_BUDGET": "60000",
+  },
+  "ratelimits": [
+    {
+      "name": "INGEST_LIMITER",
+      "namespace_id": "1001",
+      "simple": {
+        "limit": 600,
+        "period": 60,
+      },
+    },
+  ],
+  "triggers": {
+    "crons": ["*/5 * * * *"],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "glass-aca",
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "migrations",
+    },
+  ],
+  "observability": {
+    "enabled": false,
+  },
+}

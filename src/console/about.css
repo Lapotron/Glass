@@ -1,0 +1,184 @@
+.about-workspace-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.about-workspace-toolbar .about-tabs {
+  margin: 0;
+}
+.about-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+.about-editor-grid > section {
+  min-width: 0;
+  overflow: hidden;
+}
+.about-editor-grid .editor-formatting {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+.about-editor-grid .editor-formatting .button {
+  margin-left: auto;
+}
+.about-story-editor {
+  height: clamp(580px, calc(100dvh - 270px), 820px);
+  display: flex;
+  flex-direction: column;
+}
+.about-story-editor > .code-editor {
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.about-preview-panel {
+  position: sticky;
+  top: 100px;
+}
+.about-preview-panel .about-preview {
+  height: clamp(580px, calc(100dvh - 270px), 820px);
+}
+.about-preview-mobile .live-preview {
+  width: min(390px, 100%);
+  margin-inline: auto;
+}
+.about-profile-editor,
+.about-guestbook-editor {
+  padding: 24px;
+}
+.about-profile-editor .settings-card-heading {
+  margin-bottom: 24px;
+}
+.about-profile-editor .field {
+  margin-bottom: 18px;
+}
+.profile-photo-placeholder {
+  width: 90px;
+  height: 90px;
+  border-radius: 24px;
+  display: grid;
+  place-items: center;
+  background: var(--inset-bg);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  flex-shrink: 0;
+}
+.about-profile-editor .profile-link-row {
+  grid-template-columns: 20px minmax(0, 0.7fr) minmax(0, 1fr) 30px;
+  align-items: center;
+}
+.about-profile-editor .profile-link-row > svg {
+  color: var(--muted);
+}
+.about-mode-write {
+  grid-template-columns: minmax(0, 1fr);
+}
+.about-mode-write > .about-preview-panel,
+.about-mode-preview > .about-source {
+  display: none;
+}
+.about-mode-preview {
+  grid-template-columns: minmax(0, 1fr);
+}
+.about-mode-write .about-source {
+  max-width: 900px;
+  width: 100%;
+  margin-inline: auto;
+}
+.integration-notice,
+.integration-check-result {
+  display: flex;
+  gap: 14px;
+  align-items: start;
+  margin: 20px 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--inset-bg);
+}
+.integration-notice > svg,
+.integration-check-result > svg {
+  color: var(--accent-text);
+  margin-top: 3px;
+}
+.integration-notice > div,
+.integration-check-result > div {
+  min-width: 0;
+  flex: 1;
+}
+.integration-notice strong,
+.integration-check-result strong {
+  font-size: calc(13px * var(--font-scale));
+  overflow-wrap: anywhere;
+}
+.integration-check-result .field {
+  margin-top: 18px;
+}
+.discussion-check-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.giscus-import {
+  border-block: 1px solid var(--line);
+  padding: 14px 0;
+  margin: 20px 0;
+}
+.giscus-import > summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  cursor: pointer;
+  font-size: calc(12px * var(--font-scale));
+  color: var(--muted);
+}
+.giscus-import[open] > summary {
+  margin-bottom: 16px;
+}
+@media (max-width: 900px) {
+  .about-editor-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .about-mode-split > .about-preview-panel {
+    display: none;
+  }
+  .about-view-modes > button:nth-child(2) {
+    display: none;
+  }
+  .about-preview-panel {
+    position: static;
+  }
+}
+@media (max-width: 500px) {
+  .about-profile-editor,
+  .about-guestbook-editor {
+    padding: 18px;
+  }
+  .about-workspace-toolbar {
+    gap: 12px;
+  }
+  .about-profile-editor .profile-link-row {
+    grid-template-columns: 20px minmax(0, 1fr) 30px;
+  }
+  .about-profile-editor .profile-link-row > input:nth-of-type(1) {
+    grid-column: 2;
+  }
+  .about-profile-editor .profile-link-row > input:nth-of-type(2) {
+    grid-column: 2;
+    grid-row: 2;
+  }
+  .about-profile-editor .profile-link-row > button {
+    grid-column: 3;
+    grid-row: 1 / 3;
+  }
+}
