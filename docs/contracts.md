@@ -14,6 +14,8 @@ The optional [hosted Studio](hosted-studio.md) retains these canonical contracts
 
 Hosted Studio owns `/` on its private hostname, with hash-based workspace sections. Its compiler, authoring references and static assets share that protected origin. Legacy `/studio/` bookmarks redirect to root while preserving query and fragment navigation. Local Studio retains `/studio/` alongside the local reader. Missing hosted paths remain 404 rather than falling through to the public reader or Studio shell.
 
+Trusted CI requests use the exact Studio origin and both the CI bearer and configured Access service-token headers. They refuse redirects without forwarding credentials and report Access login, origin redirects and CI authentication failures separately, without logging redirect URLs or login metadata. First-deployment bootstrap remains an explicit configuration without a CI credential fetch; authentication failures never silently select the bootstrap path. See [hosted CI troubleshooting](hosted-studio.md#ci-redirects-during-studio-deployment).
+
 - `content/site.json`: `SiteConfig` version 1, profile, legacy navigation/section keys, homepage composition and retained slides, theme, and Pages target identifiers.
 - `content/library.json`: the photo journal and preserved legacy news records. Photo records include a stable ID, local image URL, alt text, caption, album, date, and sample flag. Legacy news is retained on disk for compatibility, but is no longer displayed or edited in the interface.
 - `content/posts/*.md` and `content/lab/*.md`: UTF-8 Markdown with YAML frontmatter. Files are flat; file names do not determine routes.

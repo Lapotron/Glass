@@ -211,18 +211,34 @@ Optional public-media R2 destinations and ACA Worker/database names are configur
 
 ## Dashboard troubleshooting
 
-| Symptom                                                       | Check                                                                                                                                   |
-| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| First Studio deployment tries to fetch deployment credentials | Omit `GLASS_CI_TOKEN` from the bootstrap build secret. Add it after Studio is reachable and its token is saved.                         |
-| `Save the deployment token in Studio Credentials first`       | Sign in and save the token in Studio before enabling the complete CI secret configuration.                                              |
-| Worker name mismatch or automatic name-fix PR                 | Match the linked dashboard Worker and its checked-in root Wrangler `name`; keep the retained root Pages config intact.                  |
-| Missing entry point or assets directory                       | Use the explicit infrastructure root and custom build/deploy commands in the table. Generated artifacts are created by the build stage. |
-| Build gets an Access login page or authentication denial      | Check service token values, expiration and the Service Auth policy, then the separate CI token match.                                   |
-| Owner sign-in is rejected                                     | Match `ACCESS_TEAM`, application AUD and owner email to the Access application protecting the exact Studio origin.                      |
-| Reader says there is no approved release                      | Configure the reader Hook and publish from Studio once.                                                                                 |
-| Build still uses old credentials                              | Update the saved Studio token; later deployments fetch it from the private coordinator.                                                 |
-| Public deployment verification fails                          | Check exact origins and deployment marker; retain and inspect the returned URL before another upload.                                   |
-| D1 free daily write quota reached                             | Preserve unsaved drafts and wait for reset at 00:00 UTC; see recovery below. Repeated writes do not lift the limit.                     |
+| Symptom                                                       | Check                                                                                                                                     |
+| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| First Studio deployment tries to fetch deployment credentials | Omit `GLASS_CI_TOKEN` from the bootstrap build secret. Add it after Studio is reachable and its token is saved.                           |
+| `Save the deployment token in Studio Credentials first`       | Sign in and save the token in Studio before enabling the complete CI secret configuration.                                                |
+| Worker name mismatch or automatic name-fix PR                 | Match the linked dashboard Worker and its checked-in root Wrangler `name`; keep the retained root Pages config intact.                    |
+| Missing entry point or assets directory                       | Use the explicit infrastructure root and custom build/deploy commands in the table. Generated artifacts are created by the build stage.   |
+| Build gets an Access login page or authentication denial      | Check service token values, expiration and the Service Auth policy, then the separate CI token match.                                     |
+| Deploy stops with `fetch failed` / `unexpected redirect`      | The CI request reached a redirect before Wrangler ran. Follow the Access/build credential checks below; do not enable redirect following. |
+| Owner sign-in is rejected                                     | Match `ACCESS_TEAM`, application AUD and owner email to the Access application protecting the exact Studio origin.                        |
+| Reader says there is no approved release                      | Configure the reader Hook and publish from Studio once.                                                                                   |
+| Build still uses old credentials                              | Update the saved Studio token; later deployments fetch it from the private coordinator.                                                   |
+| Public deployment verification fails                          | Check exact origins and deployment marker; retain and inspect the returned URL before another upload.                                     |
+| D1 free daily write quota reached                             | Preserve unsaved drafts and wait for reset at 00:00 UTC; see recovery below. Repeated writes do not lift the limit.                       |
+
+### CI redirects during Studio deployment
+
+If the build ends with `Hosted Studio artifact` and `Success: Build command completed`, but `cloud:deploy:studio` then fails with `TypeError: fetch failed` and `unexpected redirect`, compilation succeeded. With `GLASS_CI_TOKEN` present, the deploy script first requests `/__ci/deployment-credentials` from `GLASS_STUDIO_ORIGIN`. An Access login redirect prevents this request from reaching Studio; an origin redirect can also cause the failure. Lucide's `use client` warnings are unrelated to this deploy-stage error.
+
+For a **first deployment or a recreated Studio**, use the bootstrap secret from step 5: only `CLOUDFLARE_API_TOKEN` in `GLASS_CI_SECRETS`. Remove any individually configured `GLASS_CI_TOKEN` too, since individual variables take precedence. Deploy Studio, save the deployment token in Studio Credentials, then add the complete CI secrets from step 6.
+
+For an **existing Studio**, check these settings before retrying:
+
+1. Set `GLASS_STUDIO_ORIGIN` to the exact active HTTPS hostname, such as `https://console.example.com`, in both pipelines. Remove `/studio/`, query strings and stale individual overrides. The `/__ci/` request must reach this hostname directly.
+2. In **Workers & Pages → Studio Worker → Settings → Builds → Variables and secrets**, verify that `GLASS_CI_SECRETS` includes both `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` from the same unexpired Access service token. These are build credentials; adding them only to Worker runtime secrets does not supply them to Builds.
+3. In **Zero Trust → Access controls → Applications → your Studio application → Policies**, authorize that service token with action **Service Auth** and an **Include → Service Token** rule. Protect the whole active Studio hostname. The owner's email Allow policy remains separate. An ordinary Allow policy does not perform machine authentication; see Cloudflare's [service-token documentation](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/).
+4. Make sure build `GLASS_CI_TOKEN` equals runtime `CI_TOKEN`. An incorrect CI token produces Studio's `Build authentication required` response after Access has allowed the request; it does not fix an Access login redirect.
+
+The CI client refuses all redirects and reports Access login redirects, other redirects and authentication failures separately. It never follows a redirect with build credentials or logs its login URL/query. Strict Access service-token authentication may return `401` or `403` instead of a redirect; check the same service-token pair and Service Auth policy. Fix the configuration before starting another deploy; do not bypass Access or fall back silently to a different deployment credential.
 
 ## Scripted setup alternative
 

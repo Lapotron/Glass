@@ -6,35 +6,101 @@ import type { CloudJob } from '../src/cloud/jobs.js';
 import type { WorkspaceManifest, FileRecord } from '../src/cloud/types.js';
 import { snapshotSelection } from '../src/shared/cloud-snapshot.js';
 export const sha = (bytes: Uint8Array | string) => createHash('sha256').update(bytes).digest('hex');
-export const cloudHeaders = () => ({
-  Authorization: 'Bearer ' + required('GLASS_CI_TOKEN'),
-  ...(process.env.CF_ACCESS_CLIENT_ID
-    ? {
-        'CF-Access-Client-Id': process.env.CF_ACCESS_CLIENT_ID,
-        'CF-Access-Client-Secret': required('CF_ACCESS_CLIENT_SECRET'),
-      }
-    : {}),
-});
+export const cloudHeaders = () => {
+  const access = process.env.CF_ACCESS_CLIENT_ID || process.env.CF_ACCESS_CLIENT_SECRET;
+  return {
+    Authorization: 'Bearer ' + required('GLASS_CI_TOKEN'),
+    ...(access
+      ? {
+          'CF-Access-Client-Id': required('CF_ACCESS_CLIENT_ID'),
+          'CF-Access-Client-Secret': required('CF_ACCESS_CLIENT_SECRET'),
+        }
+      : {}),
+  };
+};
 export function required(name: string) {
   const value = process.env[name];
   if (!value) throw new Error('Configure ' + name + ' in Cloudflare build secrets.');
   return value;
 }
-export async function cloudFetch(route: string, options: RequestInit = {}) {
+export async function cloudFetch(
+  route: string,
+  options: RequestInit = {},
+  request: typeof fetch = fetch,
+) {
   const origin = new URL(required('GLASS_STUDIO_ORIGIN'));
-  if (origin.protocol !== 'https:' && origin.hostname !== '127.0.0.1')
-    throw new Error('Studio must use HTTPS.');
-  const response = await fetch(new URL('/__ci/' + route, origin), {
+  if (
+    !(
+      origin.protocol === 'https:' ||
+      (origin.protocol === 'http:' && origin.hostname === '127.0.0.1')
+    ) ||
+    origin.username ||
+    origin.password ||
+    origin.pathname !== '/' ||
+    origin.search ||
+    origin.hash
+  )
+    throw new Error(
+      'GLASS_STUDIO_ORIGIN must be the exact HTTPS Studio origin, without a path or credentials.',
+    );
+  const headers = new Headers(cloudHeaders());
+  new Headers(options.headers).forEach((value, name) => headers.set(name, value));
+  const response = await request(new URL('/__ci/' + route, origin), {
     ...options,
-    headers: { ...cloudHeaders(), ...options.headers },
-    redirect: 'error',
+    headers,
+    redirect: 'manual',
   });
+  const bootstrap =
+    route === 'deployment-credentials'
+      ? ' For a first Studio deployment, omit GLASS_CI_TOKEN from GLASS_CI_SECRETS and individual build variables until Studio is running and its deployment token is saved.'
+      : '';
+  const accessHelp =
+    'Check CF_ACCESS_CLIENT_ID and CF_ACCESS_CLIENT_SECRET in Workers Builds GLASS_CI_SECRETS, and authorize that service token in a Service Auth policy for the whole Studio hostname.';
+  if (response.status >= 300 && response.status < 400) {
+    let accessLogin = false;
+    try {
+      const location = new URL(response.headers.get('location') || '', origin);
+      accessLogin =
+        location.protocol === 'https:' &&
+        location.hostname.endsWith('.cloudflareaccess.com') &&
+        location.pathname.startsWith('/cdn-cgi/access/login/');
+    } catch {}
+    await response.body?.cancel();
+    throw new Error(
+      'Studio CI at ' +
+        origin.origin +
+        ' returned a redirect (HTTP ' +
+        response.status +
+        '). ' +
+        (accessLogin
+          ? 'Cloudflare Access requires a machine login. ' + accessHelp
+          : 'Check GLASS_STUDIO_ORIGIN and remove redirects from /__ci/ requests.') +
+        ' Credentials were not forwarded.' +
+        bootstrap,
+    );
+  }
   if (!response.ok) {
     let message = 'Cloud operation failed (' + response.status + ').';
+    let apiError = false;
     try {
-      message = (await response.json()).error || message;
+      const body = await response.json();
+      if (typeof body.error === 'string' && body.error) {
+        message = body.error;
+        apiError = true;
+      }
     } catch {}
-    throw new Error(message);
+    if (apiError && response.status === 401)
+      message += ' Check that GLASS_CI_TOKEN matches the Studio runtime CI_TOKEN.';
+    else if (!apiError && [401, 403].includes(response.status)) message += ' ' + accessHelp;
+    throw new Error(message + bootstrap);
+  }
+  if (response.headers.get('content-type')?.includes('text/html')) {
+    await response.body?.cancel();
+    throw new Error(
+      'Studio CI returned HTML instead of an API response. Check GLASS_STUDIO_ORIGIN. ' +
+        accessHelp +
+        bootstrap,
+    );
   }
   return response;
 }
