@@ -21,6 +21,15 @@ export type CloudJob = {
   release_id: string | null;
   commit_sha: string | null;
 };
+const activeJobConflict = () =>
+  new CloudError(
+    'Another cloud operation already holds the build queue. Open Studio → Hosting and check its captured Build log. If that build failed before claiming the request, cancel the unclaimed request and start the intended operation again in Studio. A Cloudflare Dashboard Retry has a different build ID and cannot claim the original request.',
+    409,
+  );
+const isActiveJobConflict = (error: unknown) =>
+  /UNIQUE constraint failed: index ['"]cloud_jobs_one_active['"]/i.test(String(error));
+const isBuildIdConflict = (error: unknown) =>
+  /UNIQUE constraint failed: cloud_jobs\.build_uuid\b/i.test(String(error));
 const allowed =
   /^\/api\/(?:preview$|content(?:\/|$)|trash(?:\/|$)|photos(?:\/|$)|media(?:\/|$)|backups(?:\/|$)|backup-settings(?:\/|$)|maintenance$|notebook\/reset|exports\/|jobs\/|projects\/github|cloud-media(?:\/|$)|search-console(?:\/|$)|aca(?:\/|$)|analytics(?:[-/]|$)|services\/|cloudflare(?:\/|$)|integrations\/|authoring\/|schedule(?:\/|$)|pages\/about|library\/undo|connections\/(?:test|import-environment)$)/;
 export function queuedPath(path: string) {
@@ -85,8 +94,9 @@ export async function trigger(env: CloudEnv, job: CloudJob) {
     hook: credentials.BUILDS_DEPLOY_HOOK,
     token: credentials.BUILDS_API_TOKEN || credentials.CLOUDFLARE_API_TOKEN,
   });
-  await env.DB.prepare('UPDATE cloud_jobs SET build_uuid=?, state=?, updated=? WHERE id=?')
-    .bind(uuid, 'queued', new Date().toISOString(), job.id)
+  // Registration must not put a concurrently cancelled request back in the queue.
+  await env.DB.prepare('UPDATE cloud_jobs SET build_uuid=?, updated=? WHERE id=?')
+    .bind(uuid, new Date().toISOString(), job.id)
     .run();
   return uuid;
 }
@@ -187,7 +197,12 @@ export async function enqueue(
         env.DB.prepare('UPDATE cloud_control SET approved_release=? WHERE id=1').bind(releaseId),
       );
   }
-  await env.DB.batch(statements);
+  try {
+    await env.DB.batch(statements);
+  } catch (error) {
+    if (isActiveJobConflict(error)) throw activeJobConflict();
+    throw error;
+  }
   try {
     job.build_uuid = await trigger(env, job);
   } catch (error) {
@@ -212,95 +227,124 @@ export async function claimBuild(env: CloudEnv, uuid: string, commit: string, br
     .first<CloudJob>();
   if (!job) {
     // API-trigger startup can precede the coordinator's UUID write. Never select an arbitrary queued job.
-    const waiting = await env.DB.prepare(
-      "SELECT id FROM cloud_jobs WHERE build_uuid IS NULL AND state='queued' LIMIT 1",
-    ).first();
-    if (waiting) throw new CloudError('Build registration is settling. Retry this claim.', 503);
-    const current = await env.DB.prepare(
-      'SELECT approved_release FROM cloud_control WHERE id=1',
-    ).first<{ approved_release: string | null }>();
-    if (!current?.approved_release)
-      throw new CloudError(
-        'Import the notebook and approve its first release in Studio before deploying the public site.',
-        409,
-      );
-    const release = await env.DB.prepare('SELECT * FROM cloud_releases WHERE id=?')
-      .bind(current.approved_release)
-      .first<{ version: number; manifest_key: string }>();
-    if (!release) throw new CloudError('The approved release is unavailable.', 503);
-    const now = new Date().toISOString(),
-      id = crypto.randomUUID();
-    job = {
-      id,
-      kind: 'publish',
-      actor: 'github',
-      version: release.version,
-      request: '{}',
-      build_uuid: uuid,
-      state: 'queued',
-      created: now,
-      updated: now,
-      result_key: null,
-      error: null,
-      release_id: current.approved_release,
-      commit_sha: commit,
-    };
-    const source = await env.BUCKET.get(release.manifest_key);
-    if (!source) throw new CloudError('Release snapshot is missing.', 503);
-    const captured = JSON.parse(await source.text()) as WorkspaceManifest;
-    // Credentials are operational state. Refresh them when code rebuilds a previously approved release.
-    const operational = (
-      await env.DB.prepare(
-        "SELECT * FROM cloud_files WHERE path='.studio/connections.json' OR path GLOB '.studio/services/*'",
-      ).all<import('./types.js').FileRecord>()
-    ).results;
-    captured.files = [
-      ...captured.files.filter(
-        (file) =>
-          file.path !== '.studio/connections.json' && !file.path.startsWith('.studio/services/'),
-      ),
-      ...operational,
-    ];
-    await putObject(env, 'jobs/' + id + '/manifest.json', JSON.stringify(captured));
-    await env.DB.prepare(
-      'INSERT INTO cloud_jobs(id,kind,state,actor,version,request,build_uuid,created,updated,release_id,commit_sha) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
-    )
-      .bind(
+    const active = await env.DB.prepare(
+      "SELECT * FROM cloud_jobs WHERE state IN ('queued','running') LIMIT 1",
+    ).first<CloudJob>();
+    if (active?.build_uuid === uuid) job = active;
+    else {
+      if (active?.state === 'queued' && !active.build_uuid)
+        throw new CloudError('Build registration is settling. Retry this claim.', 503);
+      if (active) throw activeJobConflict();
+      const current = await env.DB.prepare(
+        'SELECT approved_release FROM cloud_control WHERE id=1',
+      ).first<{ approved_release: string | null }>();
+      if (!current?.approved_release)
+        throw new CloudError(
+          'Import the notebook and approve its first release in Studio before deploying the public site.',
+          409,
+        );
+      const release = await env.DB.prepare('SELECT * FROM cloud_releases WHERE id=?')
+        .bind(current.approved_release)
+        .first<{ version: number; manifest_key: string }>();
+      if (!release) throw new CloudError('The approved release is unavailable.', 503);
+      const sourceJob = release.manifest_key.match(/^jobs\/([^/]+)\/manifest\.json$/)?.[1];
+      if (!sourceJob) throw new CloudError('Approved release has no captured object index.', 503);
+      const now = new Date().toISOString(),
+        id = crypto.randomUUID();
+      job = {
         id,
-        job.kind,
-        'queued',
-        'github',
-        job.version,
-        '{}',
-        uuid,
-        now,
-        now,
-        job.release_id,
-        commit,
-      )
-      .run();
-    const sourceJob = release.manifest_key.match(/^jobs\/([^/]+)\/manifest\.json$/)?.[1];
-    if (!sourceJob) throw new CloudError('Approved release has no captured object index.', 503);
-    await env.DB.prepare(
-      'INSERT INTO cloud_job_files(job_id,path,sha,encrypted) SELECT ?,path,sha,encrypted FROM cloud_job_files WHERE job_id=?',
-    )
-      .bind(id, sourceJob)
-      .run();
-    await env.DB.batch([
-      env.DB.prepare(
-        "DELETE FROM cloud_job_files WHERE job_id=? AND (path='.studio/connections.json' OR path GLOB '.studio/services/*')",
-      ).bind(id),
-      env.DB.prepare(
-        "INSERT INTO cloud_job_files SELECT ?,path,sha,encrypted FROM cloud_files WHERE path='.studio/connections.json' OR path GLOB '.studio/services/*'",
-      ).bind(id),
-    ]);
+        kind: 'publish',
+        actor: 'github',
+        version: release.version,
+        request: '{}',
+        build_uuid: uuid,
+        state: 'queued',
+        created: now,
+        updated: now,
+        result_key: null,
+        error: null,
+        release_id: current.approved_release,
+        commit_sha: commit,
+      };
+      const source = await env.BUCKET.get(release.manifest_key);
+      if (!source) throw new CloudError('Release snapshot is missing.', 503);
+      const captured = JSON.parse(await source.text()) as WorkspaceManifest;
+      // Credentials are operational state. Refresh them when code rebuilds a previously approved release.
+      const operational = (
+        await env.DB.prepare(
+          "SELECT * FROM cloud_files WHERE path='.studio/connections.json' OR path GLOB '.studio/services/*'",
+        ).all<import('./types.js').FileRecord>()
+      ).results;
+      captured.files = [
+        ...captured.files.filter(
+          (file) =>
+            file.path !== '.studio/connections.json' && !file.path.startsWith('.studio/services/'),
+        ),
+        ...operational,
+      ];
+      await putObject(env, 'jobs/' + id + '/manifest.json', JSON.stringify(captured));
+      const statements = [
+        env.DB.prepare(
+          'INSERT INTO cloud_jobs(id,kind,state,actor,version,request,build_uuid,created,updated,release_id,commit_sha) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
+        ).bind(
+          id,
+          job.kind,
+          'queued',
+          'github',
+          job.version,
+          '{}',
+          uuid,
+          now,
+          now,
+          job.release_id,
+          commit,
+        ),
+        env.DB.prepare(
+          "INSERT INTO cloud_job_files(job_id,path,sha,encrypted) SELECT ?,path,sha,encrypted FROM cloud_job_files WHERE job_id=? AND path!='.studio/connections.json' AND path NOT GLOB '.studio/services/*'",
+        ).bind(id, sourceJob),
+      ];
+      // Authorize exactly the operational bytes captured above, even if settings change during R2 I/O.
+      for (let offset = 0; offset < operational.length; offset += 500)
+        statements.push(
+          env.DB.prepare(
+            "INSERT INTO cloud_job_files(job_id,path,sha,encrypted) SELECT ?,json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]') FROM json_each(?)",
+          ).bind(
+            id,
+            JSON.stringify(
+              operational
+                .slice(offset, offset + 500)
+                .map((file) => [file.path, file.sha, file.encrypted]),
+            ),
+          ),
+        );
+      try {
+        // The job and its blob authorization index become visible together, or neither is created.
+        await env.DB.batch(statements);
+      } catch (error) {
+        if (!isActiveJobConflict(error) && !isBuildIdConflict(error)) throw error;
+        // An identical claim may have won the race; another build must never take over its job.
+        const existing = await env.DB.prepare('SELECT * FROM cloud_jobs WHERE build_uuid=?')
+          .bind(uuid)
+          .first<CloudJob>();
+        if (!existing) throw activeJobConflict();
+        job = existing;
+      }
+    }
   }
   if (!['queued', 'running'].includes(job.state))
     throw new CloudError('This build has already finished.', 409);
-  await env.DB.prepare('UPDATE cloud_jobs SET state=?,commit_sha=?,updated=? WHERE id=?')
-    .bind('running', commit, new Date().toISOString(), job.id)
-    .run();
   const manifest = await env.BUCKET.get('jobs/' + job.id + '/manifest.json');
   if (!manifest) throw new CloudError('Captured notebook snapshot is missing.', 503);
-  return { job, manifest: JSON.parse(await manifest.text()) as WorkspaceManifest };
+  const captured = JSON.parse(await manifest.text()) as WorkspaceManifest;
+  const claimed = await env.DB.prepare(
+    "UPDATE cloud_jobs SET state='running',commit_sha=?,updated=? WHERE id=? AND build_uuid=? AND state IN ('queued','running') AND (commit_sha IS NULL OR commit_sha=?) RETURNING *",
+  )
+    .bind(commit, new Date().toISOString(), job.id, uuid, commit)
+    .first<CloudJob>();
+  if (!claimed)
+    throw new CloudError(
+      'This build can no longer claim the request. It was cancelled, finished, or claimed for a different commit. Check Studio → Hosting before starting another operation.',
+      409,
+    );
+  return { job: claimed, manifest: captured };
 }

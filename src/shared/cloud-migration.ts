@@ -1,6 +1,10 @@
-/** Folder pickers may omit hidden .studio directories; preserve logical paths separately. */
+/** Folder pickers omit hidden segments, including cache marker filenames inside visible folders. */
 export const cloudExportFilePath = (name: string) =>
-  name.startsWith('.studio/') ? 'private/' + name.slice(8) : name;
+  (name.startsWith('.studio/') ? 'private/' + name.slice(8) : name)
+    .split('/')
+    // Escape existing underscores too, so `.complete` and `_.complete` remain distinct.
+    .map((part) => (/^[._]/.test(part) ? '_' + part : part))
+    .join('/');
 export const validCloudExportPath = (name: unknown): name is string =>
   typeof name === 'string' &&
   name.length <= 2048 &&
