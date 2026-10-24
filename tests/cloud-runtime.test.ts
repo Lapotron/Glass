@@ -17,9 +17,15 @@ beforeAll(async () => {
   await bundleCloudWorker(
     path.join(folder, 'test.mjs'),
     `import {createCloudApp} from './src/cloud/worker.ts';
-    const app=createCloudApp({authenticate:async(request)=>({id:request.headers.has('X-Fixture-Read-Only')?'unseen-owner':'fixture-owner',email:'owner@fixture.test'})});
+    const app=createCloudApp({authenticate:async(request)=>({id:request.headers.has('X-Fixture-Read-Only')?'unseen-owner':'fixture-owner',email:'owner@fixture.test'}),connectionFetch:async(input)=>{
+      const request=new Request(input);
+      if(request.method!=='GET')throw new Error('Fixture disallows external mutations.');
+      if(new URL(request.url).hostname.endsWith('.r2.cloudflarestorage.com'))return new Response('<ListBucketResult><Key>private-object-canary</Key></ListBucketResult>');
+      return Response.json({success:true,result:[]});
+    }});
     export default {fetch:(request,env)=>{
       if(request.headers.has('X-Fixture-Runtime-Token'))env={...env,CLOUDFLARE_API_TOKEN:'fixture-runtime-token'};
+      if(request.headers.has('X-Fixture-R2-Token'))env={...env,R2_ACCESS_KEY_ID:'fixture-s3-access',R2_SECRET_ACCESS_KEY:'fixture-private-s3-secret'};
       if(request.headers.has('X-Fixture-Read-Only')){
         const database=env.DB;
         env={...env,DB:{prepare(sql){if(!/^SELECT\\b/i.test(sql.trim()))throw new Error('Fixture disallows database writes.');return database.prepare(sql)},batch(){throw new Error('Fixture disallows database writes.')},exec(){throw new Error('Fixture disallows database writes.')}}};
@@ -42,6 +48,7 @@ beforeAll(async () => {
       ACCESS_ADMINS: 'owner@fixture.test',
       STUDIO_SECRET: 'test-secret-'.repeat(5),
       CI_TOKEN: 'test-ci-'.repeat(6),
+      CLOUDFLARE_ACCOUNT_ID: 'a'.repeat(32),
     },
   };
   runtime = new Miniflare(
@@ -71,6 +78,66 @@ afterAll(async () => {
 async function get(route: string) {
   return runtime.dispatchFetch(origin + route);
 }
+it('initializes a new cloud notebook with its deployment account and no missing fixture portrait', async () => {
+  const state = (await (await get('/api/bootstrap')).json()) as any;
+  expect(state.site.cloudflare.accountId).toBe('a'.repeat(32));
+  expect(state.site.profile.portrait).toBe('');
+});
+it('returns a missing R2 configuration error directly without creating a cloud job', async () => {
+  const state = (await (await get('/api/bootstrap')).json()) as any;
+  const db = await runtime.getD1Database('DB');
+  const before = await db.prepare('SELECT COUNT(*) AS count FROM cloud_jobs').first('count');
+  const response = await runtime.dispatchFetch(origin + '/api/connections/test', {
+    method: 'POST',
+    headers: { Origin: origin, 'X-Studio-Token': state.token },
+    body: JSON.stringify({ provider: 'r2' }),
+  });
+  expect(response.status).toBe(400);
+  expect(await response.text()).toContain('R2 needs:');
+  expect(await db.prepare('SELECT COUNT(*) AS count FROM cloud_jobs').first('count')).toBe(before);
+});
+it('checks saved R2 credentials while the build queue is busy without writing D1 or exposing listings', async () => {
+  const initial = (await (await get('/api/bootstrap')).json()) as any;
+  const configured = {
+    ...initial.site,
+    mediaDelivery: {
+      mode: 'r2', bucket: 'fixture-media', publicOrigin: 'https://assets.fixture.test', prefix: 'media',
+    },
+  };
+  expect((await write('/api/site', { value: configured, revision: initial.siteRevision }, 'PUT')).status).toBe(200);
+  const db = await runtime.getD1Database('DB');
+  const now = new Date().toISOString();
+  const version = await db.prepare('SELECT version FROM cloud_workspace WHERE id=1').first('version');
+  await db.prepare("INSERT INTO cloud_jobs(id,kind,state,actor,version,request,build_uuid,created,updated) VALUES('connection-test-busy','api','queued','fixture-owner',?,'{}','another-build',?,?)").bind(version, now, now).run();
+  try {
+    const before = await db.prepare('SELECT version FROM cloud_workspace WHERE id=1').first('version');
+    const state = (await (await runtime.dispatchFetch(origin + '/api/bootstrap', {
+      headers: { 'X-Fixture-Read-Only': 'true' },
+    })).json()) as any;
+    const headers = {
+      Origin: origin, 'X-Studio-Token': state.token,
+      'X-Fixture-Read-Only': 'true', 'X-Fixture-R2-Token': 'true',
+    };
+    const result = await runtime.dispatchFetch(origin + '/api/connections/test', {
+      method: 'POST', headers, body: JSON.stringify({ provider: 'r2' }),
+    });
+    expect(result.status).toBe(200);
+    const text = await result.text();
+    expect(JSON.parse(text).ok).toBe(true);
+    expect(text).not.toMatch(/cloudJob|private-object|fixture-private|fixture-s3/);
+    expect(result.headers.get('cache-control')).toContain('no-store');
+    expect(await db.prepare('SELECT version FROM cloud_workspace WHERE id=1').first('version')).toBe(before);
+    expect(await db.prepare("SELECT state FROM cloud_jobs WHERE id='connection-test-busy'").first('state')).toBe('queued');
+    const denied = await runtime.dispatchFetch(origin + '/api/connections/test', {
+      method: 'POST', body: JSON.stringify({ provider: 'r2' }),
+    });
+    expect(denied.status).toBe(403);
+  } finally {
+    await db.prepare("DELETE FROM cloud_jobs WHERE id='connection-test-busy'").run();
+    const current = (await (await get('/api/bootstrap')).json()) as any;
+    await write('/api/site', { value: initial.site, revision: current.siteRevision }, 'PUT');
+  }
+});
 it('reads saved media protection status without queueing a build or writing D1', async () => {
   await get('/api/bootstrap');
   const db = await runtime.getD1Database('DB');

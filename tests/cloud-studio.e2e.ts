@@ -70,6 +70,24 @@ test('hosted Studio opens at root and redirects legacy bookmarks without losing 
   const external = await request.get('/studio//external.test', { maxRedirects: 0 });
   expect(external.headers().location).toBe('/external.test');
 });
+test('credential checks report missing R2 setup without starting a build', async ({ page, request }) => {
+  const before = await (await request.get('/api/cloud/status')).json();
+  const polls: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.startsWith('/api/cloud-jobs/')) polls.push(request.url());
+  });
+  await page.goto('/#settings/connections');
+  const response = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/connections/test');
+  await page.getByRole('button', { name: 'Test saved R2 connection', exact: true }).click();
+  const result = await response;
+  expect(result.status()).toBe(400);
+  expect(await result.json()).toMatchObject({ error: expect.stringContaining('R2 needs:') });
+  await expect(page.getByRole('alert').filter({ hasText: 'R2 needs:' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Test saved R2 connection', exact: true })).toBeEnabled();
+  expect(polls).toEqual([]);
+  const after = await (await request.get('/api/cloud/status')).json();
+  expect(after.jobs.map((job: { id: string }) => job.id)).toEqual(before.jobs.map((job: { id: string }) => job.id));
+});
 test('Projects preview stays inside its card and scrolls independently in hosted Studio', async ({
   page,
   request,

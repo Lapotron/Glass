@@ -153,6 +153,10 @@ A hook avoids requiring a separate user-scoped Builds API token. An account-scop
 
 ### 8. Import or create content, then publish staging
 
+New notebooks start with the deployment's Cloudflare account ID and no missing fixture portrait. Existing notebooks retain their saved settings: if a build reports that the account or canonical URL differs, compare **Site settings → Publishing** and **General → Site details** with the account and reader origin in Hosting, save, then approve a new publication. A source push rebuilds the preceding approved snapshot and cannot approve those setting changes. A newly created reader can continue serving Hello World until its first successful publication.
+
+**Test saved R2 connection** runs directly in Studio without Workers Builds, including while a build is active. Missing account/bucket/domain/S3 credentials produce an immediate error. A configured check reads at most one S3 object listing, has a 15-second network timeout and never writes objects or returns their names. It checks the optional media-delivery credentials, not the private Studio storage binding. Saving private media in Studio does not require an S3 key pair.
+
 In hosted Studio, import a portable notebook through **Backups → Import a notebook**, or configure a new notebook. If starting empty, upload a profile portrait or clear the starter portrait reference before the first build. Media preparation and other heavy operations use the configured build queue.
 
 The hosted notebook is independent of repository `content/`: Git code pushes rebuild an approved cloud snapshot. They do not initialize or overwrite cloud content from Git.

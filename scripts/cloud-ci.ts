@@ -239,12 +239,13 @@ try {
     if (preparation.status !== 0) throw new Error('Could not prepare the public Worker.');
     const store = new Store(root);
     const target = (await store.snapshot()).site;
-    if (
-      target.cloudflare.accountId !== process.env.CLOUDFLARE_ACCOUNT_ID ||
-      new URL(target.url).origin !== new URL(process.env.GLASS_SITE_ORIGIN || target.url).origin
-    )
+    if (target.cloudflare.accountId !== process.env.CLOUDFLARE_ACCOUNT_ID)
       throw new Error(
-        'The notebook account or site URL differs from the configured cloud deployment. Review Hosting before publishing.',
+        'The notebook Cloudflare account is missing or differs from Hosting. In Site settings → Publishing, select the deployed account and save. Then use Build & Publish in Studio to approve a new release; a Git push only rebuilds the preceding approved settings.',
+      );
+    if (new URL(target.url).origin !== new URL(process.env.GLASS_SITE_ORIGIN || target.url).origin)
+      throw new Error(
+        'The notebook canonical URL differs from Hosting. Set Site settings → General → Site URL to the configured public site origin, save, then use Build & Publish in Studio to approve a new release.',
       );
     if (job.kind === 'publish')
       await verifyAcaPublication(

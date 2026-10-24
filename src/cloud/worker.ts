@@ -32,6 +32,7 @@ import { resolveEntrySettings } from '../shared/entry-settings.js';
 import { acaSummary, saveAca } from './services.js';
 import { HealthService } from '../server/health.js';
 import { serviceReadiness } from '../server/service-readiness.js';
+import { checkCloudflareConnection, checkR2Connection } from './connection-checks.js';
 import { MediaProtectionService } from '../server/media-protection.js';
 import { discussionCheckSchema, checkDiscussionConfiguration } from '../server/discussions.js';
 import { discussionThemePreview } from '../engine/discussion-preview.js';
@@ -51,7 +52,14 @@ async function initialized(ws: CloudWorkspace, env: CloudEnv) {
   if (ws.has('content/site.json')) return;
   ws.write(
     'content/site.json',
-    new TextEncoder().encode(JSON.stringify({ ...seed, url: env.SITE_ORIGIN })),
+    new TextEncoder().encode(
+      JSON.stringify({
+        ...seed,
+        url: env.SITE_ORIGIN,
+        profile: { ...seed.profile, portrait: '' },
+        cloudflare: { ...seed.cloudflare, accountId: env.CLOUDFLARE_ACCOUNT_ID || '' },
+      }),
+    ),
   );
   ws.write(
     'content/library.json',
@@ -89,7 +97,9 @@ async function privateFile(env: CloudEnv, path: string) {
   if (!record) throw new CloudError('File not found.', 404);
   return record;
 }
-export function createCloudApp(options: { authenticate?: typeof authenticate } = {}) {
+export function createCloudApp(
+  options: { authenticate?: typeof authenticate; connectionFetch?: typeof fetch } = {},
+) {
   const app = new Hono<{
     Bindings: CloudEnv;
     Variables: { actor: Actor; csrf: string; workspace: CloudWorkspace; store: Store };
@@ -195,7 +205,11 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
     )
       .bind(actor.id, actor.email, 'owner')
       .first();
-    if (!knownActor && !['GET', 'HEAD'].includes(c.req.method))
+    if (
+      !knownActor &&
+      !['GET', 'HEAD'].includes(c.req.method) &&
+      c.req.path !== '/api/connections/test'
+    )
       await c.env.DB.prepare(
         'INSERT INTO cloud_actors(id,email,role,created) VALUES(?,?,?,?) ON CONFLICT(id) DO UPDATE SET email=excluded.email,role=excluded.role',
       )
@@ -881,6 +895,20 @@ export function createCloudApp(options: { authenticate?: typeof authenticate } =
   app.post('/api/connections/import-environment', async (c) =>
     json(await connections(c).importEnvironment((await c.req.json()).revision)),
   );
+  app.post('/api/connections/test', async (c) => {
+    const { provider } = z
+      .object({ provider: z.enum(['cloudflare', 'r2']) })
+      .strict()
+      .parse(await c.req.json());
+    const { site } = await c.get('store').snapshot();
+    const credentials = await connections(c).values();
+    const fetcher = options.connectionFetch || edgeFetch;
+    return json(
+      provider === 'r2'
+        ? await checkR2Connection(site, credentials, fetcher)
+        : await checkCloudflareConnection(site.cloudflare.accountId, credentials, fetcher),
+    );
+  });
   app.get('/api/services/readiness', async (c) =>
     json(await serviceReadiness(c.get('store'), connections(c), edgeFetch)),
   );

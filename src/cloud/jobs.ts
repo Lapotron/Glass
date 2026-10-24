@@ -31,7 +31,7 @@ const isActiveJobConflict = (error: unknown) =>
 const isBuildIdConflict = (error: unknown) =>
   /UNIQUE constraint failed: cloud_jobs\.build_uuid\b/i.test(String(error));
 const allowed =
-  /^\/api\/(?:preview$|content(?:\/|$)|trash(?:\/|$)|photos(?:\/|$)|media(?:\/|$)|backups(?:\/|$)|backup-settings(?:\/|$)|maintenance$|notebook\/reset|exports\/|jobs\/|projects\/github|cloud-media(?:\/|$)|search-console(?:\/|$)|aca(?:\/|$)|analytics(?:[-/]|$)|services\/|cloudflare(?:\/|$)|integrations\/|authoring\/|schedule(?:\/|$)|pages\/about|library\/undo|connections\/(?:test|import-environment)$)/;
+  /^\/api\/(?:preview$|content(?:\/|$)|trash(?:\/|$)|photos(?:\/|$)|media(?:\/|$)|backups(?:\/|$)|backup-settings(?:\/|$)|maintenance$|notebook\/reset|exports\/|jobs\/|projects\/github|cloud-media(?:\/|$)|search-console(?:\/|$)|aca(?:\/|$)|analytics(?:[-/]|$)|services\/|cloudflare(?:\/|$)|integrations\/|authoring\/|schedule(?:\/|$)|pages\/about|library\/undo)/;
 export function queuedPath(path: string) {
   return allowed.test(path) && !path.includes('..') && !/[\\\0]/.test(path);
 }
