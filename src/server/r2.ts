@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import type { SiteConfig } from '../shared/contracts.js';
 import type { DeliveryAsset } from '../engine/media-delivery.js';
 import { digest } from '../engine/store.js';
+import { r2RequestError } from './r2-errors.js';
 export type MediaTransport = {
   matches(asset: DeliveryAsset): Promise<boolean>;
   upload(asset: DeliveryAsset, bytes: Buffer): Promise<void>;
@@ -55,10 +56,8 @@ export function createR2Transport(
     async inspect() {
       try {
         await client.send(new ListObjectsV2Command({ Bucket: bucket, MaxKeys: 1 }));
-      } catch {
-        throw new Error(
-          'Could not read the R2 bucket. Check the account, bucket and saved credentials.',
-        );
+      } catch (error) {
+        throw r2RequestError(error, 'bucket read');
       }
     },
     async matches(asset) {
@@ -76,9 +75,7 @@ export function createR2Transport(
           (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode === 404
         )
           return false;
-        throw new Error('Could not inspect the R2 bucket. Check the bucket-scoped credentials.', {
-          cause: error,
-        });
+        throw r2RequestError(error, 'object inspection');
       }
     },
     async upload(asset, bytes) {
@@ -97,10 +94,8 @@ export function createR2Transport(
             Metadata: { sha256: asset.sha256 },
           }),
         );
-      } catch {
-        throw new Error(
-          'R2 media upload failed. Existing objects and the accepted local build are preserved.',
-        );
+      } catch (error) {
+        throw r2RequestError(error, 'media upload');
       }
     },
     async verify(asset) {

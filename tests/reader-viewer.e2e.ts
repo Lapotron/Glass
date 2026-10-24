@@ -567,6 +567,28 @@ test('R2 configuration stays private, exposes missing prerequisites and defaults
     await expect(page.locator('.media-delivery-settings [role="status"]')).toContainText(
       'R2_ACCESS_KEY_ID',
     );
+    // Presence alone must not report a nonexistent public bucket as verified.
+    let bucketReads = 0;
+    await page.route('**/api/cloudflare/media', (route) =>
+      route.fulfill({
+        json: { configured: true, missing: [] },
+      }),
+    );
+    await page.route('**/api/connections/test', (route) => {
+      expect(route.request().postDataJSON()).toEqual({ provider: 'r2' });
+      bucketReads++;
+      return route.fulfill({
+        status: 400,
+        json: {
+          error: 'R2 bucket read failed (HTTP 404). The configured public bucket does not exist.',
+        },
+      });
+    });
+    await page.getByRole('button', { name: 'Check R2 configuration', exact: true }).click();
+    await expect(page.locator('.media-delivery-settings')).toContainText(
+      'The configured public bucket does not exist.',
+    );
+    expect(bucketReads).toBe(1);
     await screenshot(page, 'r2-configuration');
     const status = await (await request.get('/api/cloudflare/media')).json();
     expect(JSON.stringify(status)).not.toContain('test-secret');

@@ -114,6 +114,15 @@ it('returns a missing R2 configuration error directly without creating a cloud j
   const state = (await (await get('/api/bootstrap')).json()) as any;
   const db = await runtime.getD1Database('DB');
   const before = await db.prepare('SELECT COUNT(*) AS count FROM cloud_jobs').first('count');
+  const readiness = await runtime.dispatchFetch(origin + '/api/cloudflare/media', {
+    headers: { 'X-Fixture-Read-Only': 'true' },
+  });
+  expect(readiness.status).toBe(200);
+  expect(await readiness.json()).toMatchObject({
+    configured: false,
+    missing: expect.arrayContaining(['R2 bucket', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']),
+  });
+  expect(readiness.headers.get('cache-control')).toContain('no-store');
   const response = await runtime.dispatchFetch(origin + '/api/connections/test', {
     method: 'POST',
     headers: { Origin: origin, 'X-Studio-Token': state.token },
@@ -163,6 +172,15 @@ it('checks saved R2 credentials while the build queue is busy without writing D1
       'X-Fixture-Read-Only': 'true',
       'X-Fixture-R2-Token': 'true',
     };
+    const readiness = await runtime.dispatchFetch(origin + '/api/cloudflare/media', { headers });
+    expect(readiness.status).toBe(200);
+    expect(await readiness.json()).toEqual({
+      configured: true,
+      missing: [],
+      mode: 'r2',
+      bucket: 'fixture-media',
+      publicOrigin: 'https://assets.fixture.test',
+    });
     const result = await runtime.dispatchFetch(origin + '/api/connections/test', {
       method: 'POST',
       headers,

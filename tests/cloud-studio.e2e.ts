@@ -144,6 +144,43 @@ test('credential checks report missing R2 setup without starting a build', async
     before.jobs.map((job: { id: string }) => job.id),
   );
 });
+test('R2 media settings use native hosted readiness without queueing a build', async ({
+  page,
+  request,
+}) => {
+  const initial = await (await request.get('/api/bootstrap')).json();
+  const before = await (await request.get('/api/cloud/status')).json();
+  try {
+    await page.goto('/#settings/media-delivery');
+    await page.getByRole('combobox', { name: 'Media delivery', exact: true }).selectOption('r2');
+    await page.getByLabel('R2 bucket', { exact: true }).fill('fixture-media');
+    await page.getByLabel(/Public media origin/).fill('https://assets.fixture.test');
+    const response = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === '/api/cloudflare/media',
+    );
+    await page.getByRole('button', { name: 'Check R2 configuration', exact: true }).click();
+    const ready = await response;
+    expect(ready.status()).toBe(200);
+    expect(await ready.json()).toMatchObject({
+      configured: false,
+      missing: expect.arrayContaining(['R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY']),
+    });
+    await expect(page.locator('.media-delivery-settings [role="status"]')).toContainText(
+      'R2_ACCESS_KEY_ID',
+    );
+    await expect(
+      page.getByRole('button', { name: 'Check R2 configuration', exact: true }),
+    ).toBeEnabled();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    const after = await (await request.get('/api/cloud/status')).json();
+    expect(after.jobs.map((job: { id: string }) => job.id)).toEqual(
+      before.jobs.map((job: { id: string }) => job.id),
+    );
+  } finally {
+    const current = await (await request.get('/api/bootstrap')).json();
+    await mutate(request, 'site', 'PUT', { value: initial.site, revision: current.siteRevision });
+  }
+});
 test('Projects preview stays inside its card and scrolls independently in hosted Studio', async ({
   page,
   request,

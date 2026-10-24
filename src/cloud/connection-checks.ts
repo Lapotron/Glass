@@ -4,6 +4,7 @@ import type { CloudflareConnection } from '../shared/local-settings.js';
 import { r2Readiness } from '../server/r2-readiness.js';
 import { PagesConnection } from './pages.js';
 import { CloudError } from './types.js';
+import { r2RequestError } from '../server/r2-errors.js';
 
 /** These checks run on the authenticated Studio Worker, independently of its build queue. */
 export async function checkR2Connection(
@@ -32,12 +33,22 @@ export async function checkR2Connection(
       '?list-type=2&max-keys=1',
     { method: 'GET', redirect: 'manual', signal: AbortSignal.timeout(15000) },
   );
+  let response: Response;
   try {
-    const response = await fetcher(request);
-    if (!response.ok) {
-      await response.body?.cancel();
-      throw new Error('R2 request was rejected.');
-    }
+    response = await fetcher(request);
+  } catch {
+    throw new Error(
+      'Could not read the R2 bucket. Check the account, bucket and saved S3 credentials, then retry. The check times out after 15 seconds and does not use Workers Builds.',
+    );
+  }
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new Error(
+      'Could not read the R2 bucket. ' +
+        r2RequestError({ $metadata: { httpStatusCode: response.status } }, 'bucket read').message,
+    );
+  }
+  try {
     // The one-object listing verifies the saved S3 pair, not the private BUCKET binding.
     // Never return object names, signed headers or upstream error bodies to the browser.
     if (!/<ListBucketResult(?:\s|>)/.test(await response.text()))

@@ -41,6 +41,7 @@ import { acaSummary, saveAca } from './services.js';
 import { HealthService } from '../server/health.js';
 import { serviceReadiness } from '../server/service-readiness.js';
 import { checkCloudflareConnection, checkR2Connection } from './connection-checks.js';
+import { r2Readiness } from '../server/r2-readiness.js';
 import { NativeStore } from './native-store.js';
 import { NativeData, storageMaintenance } from './native-data.js';
 import { NativeMedia } from './native-media.js';
@@ -1076,6 +1077,10 @@ export function createCloudApp(
   app.post('/api/connections/import-environment', async (c) =>
     json(await connections(c).importEnvironment((await c.req.json()).revision)),
   );
+  app.get('/api/cloudflare/media', async (c) => {
+    const { site } = await c.get('store').snapshot();
+    return json(r2Readiness(site, await connections(c).values()));
+  });
   app.post('/api/connections/test', async (c) => {
     const { provider } = z
       .object({ provider: z.enum(['cloudflare', 'r2']) })
