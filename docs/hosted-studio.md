@@ -1,318 +1,199 @@
-# Hosted Studio
+# Hosted Glass Studio
 
-Glass can run as a private Cloudflare Studio while the reader remains a generated static website. The original local Studio and Pages Direct Upload commands remain available. Hosted authoring needs a browser, not a local server. Studio opens at the root of its private hostname, for example `https://console.example.com/`. Workspace sections use fragments such as `/#homepage`. Local Studio remains at `/studio/`. Legacy hosted `/studio/` links redirect to root without losing their section.
+Glass uses a private authoring platform and a generated public site. You do not need a local server for hosted authoring.
 
-## Boundaries
+## Architecture
 
-- **Studio Worker**: owner-only Cloudflare Access, CSRF-protected APIs, private static assets and remote MCP. Access JWTs must match the configured team, application audience and owner email. A legitimate Access return is a top-level GET navigation; cross-site API reads and mutations remain rejected.
-- **D1**: versioned file manifest, actor and job records, immutable release pointers and transactional compare-and-swap commits. Stale writes retain the author's draft.
-- **Private R2**: notebook bytes, originals, revisions, recovery copies and captured job results. Connection and service settings are encrypted with a separate Studio key. Never enable public access on this bucket.
-- **Reader Worker**: public static assets and the existing annotation adapter only. It has no D1 or private R2 bindings and no Studio secrets.
-- **Workers Builds**: Node compilation, native image processing, production MathJax/Mermaid, Pagefind, backups and other heavy operations. The request Worker does not spawn processes or render production Markdown.
+```mermaid
+flowchart LR
+  Owner[Owner browser] --> Access[Cloudflare Access]
+  Access --> Studio[Studio Worker]
+  Studio --> D1[(Private D1 metadata)]
+  Studio --> R2[(Private R2 blobs)]
+  Owner --> Browser[Browser crop, preview and archive worker]
+  Browser --> Studio
+  Studio -->|Explicit Publish snapshot| CI[One Studio Workers Builds pipeline]
+  Git[Git code push] -->|Update Studio only| CI
+  CI -->|Captured Publish only: Node SSG| Pages[Cloudflare Pages Direct Upload]
+  Pages --> Readers[Readers]
+```
 
-Autosave changes private content only. **Publish** captures an immutable release and starts the reader pipeline. Main-branch code pushes rebuild the approved release, rather than taking notebook content from Git. A build-only or maintenance operation never uploads the public reader. Failed deployment verification retains the URL and previous error for inspection.
+- **Studio** authenticates every private page, API, media request and authoring tool through Access JWT verification and owner allowlisting. Mutations require the same-origin Studio CSRF token.
+- **D1** stores paths, hashes, revisions, leases, snapshots and operation state. **Private R2** stores immutable file bytes. Connection and service settings use the existing Studio encryption key.
+- Routine saves, image/file uploads, crop/resize, source checks, backups, history operations and migration do **not** start CI. Large batches stage bounded requests before one compare-and-swap activation.
+- Browser previews and image preparation remain private. Prepared images use WebP, or lossless PNG when the browser cannot encode WebP. Unsupported image codecs/animation produce an explicit error; they do not queue a build or silently flatten an animation. Originals remain private. The Node production compiler owns production MathJax, Mermaid, syntax highlighting, responsive images and Pagefind.
+- **Publish** captures an immutable release and starts the Studio pipeline. That exact build UUID runs SSG and uploads to **Pages**. It does not redeploy Studio. A Git push builds/deploys Studio and never creates a public release.
+- Pages contains published reader output and its optional annotation adapter. It has no private D1/R2 bindings or Studio secrets. The optional public-media CDN bucket is separate from the private notebook bucket.
 
-Hosted live previews load canonical private `/media/` files. Resized image candidates belong to generated public artifacts, so previews omit their `srcset` and responsive preload candidates. Published pages retain their optimized responsive images.
+Explicit ACA infrastructure setup/deployment, reviewed rollback and public-CDN scans, protection-rule changes and reviewed cleanup retain a separate captured maintenance mode in the same pipeline. This mode performs no SSG, public-site deployment or Studio redeployment; ACA reports, version reads, Search Console imports and connection checks remain direct.
 
-Studio's topbar shows its package version and short source commit. Select it for the full commit, build timestamp and development/production mode. This identifies the interface loaded in the current tab, independently of the approved public reader release. Reload after deploying new code. Vite captures this metadata when it starts or builds; a star marks uncommitted application-source changes, while ordinary notebook edits do not change the label. Workers Builds uses its commit metadata, with checkout Git metadata as the local fallback; source archives without Git still show the package version and an unavailable commit.
+Local authoring and local Pages publication remain supported. Canonical Markdown/JSON formats are unchanged.
 
 ## Dashboard-only deployment
 
-This is the browser-based setup for a repository such as `Lapotron/Glass`. Cloudflare runs the build and deploy commands in Workers Builds; you do not run them in a local terminal. Content is then managed in hosted Studio. This is a manual setup sequence, not a one-click installer.
+Assume the repository is `Lapotron/Glass`, or your own fork. Choose your own names and copy real resource IDs from Cloudflare.
 
-For Cloudflare AI without external browsing, copy the [self-contained deployment prompt](cloudflare-ai-deployment-prompt.md). It includes the application boundaries, exact commands, bootstrap and normal CI credentials, staging sequence and verification checks.
+| Resource        | Example               | Purpose                                          |
+| --------------- | --------------------- | ------------------------------------------------ |
+| Studio Worker   | `glass-studio`        | Private console and native APIs                  |
+| D1 database     | `glass-studio`        | Private metadata                                 |
+| R2 bucket       | `glass-private`       | Private bytes, originals and recovery references |
+| Pages project   | `glass-blog`          | Public Direct Upload SSG output                  |
+| Studio hostname | `console.example.com` | Owner-only Access application                    |
+| Public hostname | `example.com`         | Attach to Pages after staging verification       |
 
-### Existing installations
+A single Git-connected Worker is sufficient. Do not create a second reader Worker for a new installation. Leave the R2 bucket’s public domains and `r2.dev` disabled. No S3 key pair is needed for the private Worker binding.
 
-After updating to root-hosted Studio, keep the existing configured hostname if desired. To change it to `console.example.com`, update `GLASS_STUDIO_ORIGIN` in both build configurations, the Worker domain and the whole-hostname Access application together. The path change does not require a new domain, database or bucket. Do not append `/studio/` to the configured origin.
+### 1. Create private resources
 
-When moving an existing installation to another GitHub repository, reconnect its existing Studio and reader Workers under **Settings → Builds**. Preserve their D1 database, private R2 bucket, runtime secrets and configuration. Keep `STUDIO_SECRET` unchanged: it encrypts the saved private settings. Recheck the reader Deploy Hook after reconnecting and update the saved hook if Cloudflare issues a new URL.
+In the Cloudflare dashboard, create a D1 database and a Standard R2 bucket. Record the account ID, database UUID, bucket name and chosen Worker name. Existing installations must preserve these resources, their identities and all data.
 
-The following steps describe a fresh installation. The example names are defaults; see [custom names and settings](#custom-names-and-settings) before creating resources if you want different names.
+### 2. Protect the whole Studio hostname
 
-### 1. Create the resources
+In Zero Trust → Access controls → Applications, create a self-hosted application for the **whole hostname**, without `/studio/`. Allow only the owner email. Record the Access team name and application AUD. Keep the browser owner-login policy.
 
-Your domain's zone must already exist in the same Cloudflare account, with its nameservers configured. Authorize the Cloudflare GitHub integration to read `Lapotron/Glass`, including private-repository access when applicable.
+Create a service token for CI. Add a **Service Auth** policy allowing that exact service token for the entire Studio hostname. Browser login and CI machine authentication are separate. Do not use an Access bypass policy.
 
-Create these resources through the dashboard:
+### 3. Connect GitHub to the Studio Worker
 
-| Resource                    | Example name    | Role                                          |
-| --------------------------- | --------------- | --------------------------------------------- |
-| Worker                      | `glass-studio`  | Private authoring application                 |
-| Worker                      | `glass-site`    | Public generated website                      |
-| D1 database                 | `glass-studio`  | Active notebook manifest and job records      |
-| R2 bucket, Standard storage | `glass-private` | Private notebook bytes, history and originals |
+Create the Studio Worker and connect the repository under Settings → Builds. Set the production branch and:
 
-You can create the two Workers with the Hello World template before connecting GitHub. Record the account ID, D1 database UUID and account's `workers.dev` subdomain. Leave R2 public access disabled. An optional public-media CDN bucket or separate recovery bucket is a different resource from `glass-private`.
+| Field          | Value                                                                      |
+| -------------- | -------------------------------------------------------------------------- |
+| Root directory | `infrastructure/cloud/studio`                                              |
+| Build command  | `npm --prefix ../../.. ci && npm --prefix ../../.. run cloud:build:studio` |
+| Deploy command | `npm --prefix ../../.. run cloud:deploy:studio`                            |
 
-Add the Studio hostname, for example `console.example.com`, under the Studio Worker's **Domains & Routes**. Keep the reader on its `workers.dev` staging address until publication has been verified.
+The dispatcher records its decision with the exact CI build UUID and commit. The deploy phase refuses a mismatched artifact. Auth failures are errors, never an inferred bootstrap deployment.
 
-### 2. Configure Cloudflare Access
+### 4. Set public deployment configuration
 
-In **Zero Trust → Access controls → Applications**, add a self-hosted application for the whole Studio hostname. Protect `/` and all APIs, media, compiler files and assets; do not restrict the Access application to `/studio/`.
-
-1. Add an **Allow** policy including the owner email. Enable a login method such as email one-time PIN.
-2. Under **Access controls → Service credentials → Service Tokens**, create a build service token. Retain its Client ID and Client Secret privately.
-3. Add a separate **Service Auth** policy to the Studio application, including that service token. Machine builds need this action; an ordinary email Allow policy does not authorize them.
-4. Record the team's domain prefix and the application's Audience (AUD) tag. These are different from the Cloudflare account ID.
-
-Studio checks the Access JWT and owner allowlist itself. The build coordinator additionally checks its own CI secret. Keep both boundaries in place. See Cloudflare's [self-hosted application](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/self-hosted-public-app/) and [service-token](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/) documentation.
-
-### 3. Set runtime secrets and deployment permissions
-
-Under the Studio Worker's **Settings → Variables & Secrets**, create two different random secrets of at least 32 characters:
-
-| Runtime secret  | Purpose                                                     |
-| --------------- | ----------------------------------------------------------- |
-| `STUDIO_SECRET` | Encryption of private settings and owner-session protection |
-| `CI_TOKEN`      | Authentication of trusted build clients                     |
-
-If the initial Studio build already supplies `GLASS_CI_TOKEN`, deployment installs it as runtime `CI_TOKEN`; a separate dashboard entry for that token is optional. `STUDIO_SECRET` still requires a one-time secret entry. Preserve these values for later configuration. Use fresh values only for a new installation; changing the encryption key on an existing notebook makes its encrypted settings unreadable.
-
-Create a deployment API token scoped to this account with **Workers Scripts Edit**, **D1 Edit** and **Workers R2 Storage Edit**. For the configured domains, add **Zone Read**, **DNS Edit** and **Workers Routes Edit**. Manual dashboard Access setup does not require Access API permissions on this token. Automated private branch previews need additional Access application/policy permissions; configure those later.
-
-Build variables and runtime secrets are separate Cloudflare settings. `GLASS_CLOUD_CONFIG` and `GLASS_CI_SECRETS` below belong to **Builds → Build variables/secrets**. `STUDIO_SECRET` and `CI_TOKEN` belong to the running Studio Worker. See [Workers Builds configuration](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/).
-
-### 4. Add the public build configuration
-
-Add a build variable named `GLASS_CLOUD_CONFIG`. Use the same configuration for both pipelines, replacing every angle-bracket placeholder and both example domains:
+Add the build variable `GLASS_CLOUD_CONFIG` containing JSON like this. Every value is a string:
 
 ```json
 {
-  "CLOUDFLARE_ACCOUNT_ID": "<account-id>",
   "GLASS_STUDIO_WORKER": "glass-studio",
-  "GLASS_SITE_WORKER": "glass-site",
   "GLASS_STUDIO_ORIGIN": "https://console.example.com",
   "GLASS_SITE_ORIGIN": "https://example.com",
-  "GLASS_SITE_STAGING_ORIGIN": "https://glass-site.<workers-subdomain>.workers.dev",
-  "GLASS_D1_ID": "<database-uuid>",
+  "GLASS_WORKSPACE_ID": "my-notebook",
+  "GLASS_D1_ID": "<database UUID>",
   "GLASS_D1_NAME": "glass-studio",
   "GLASS_PRIVATE_BUCKET": "glass-private",
   "GLASS_PRODUCTION_BRANCH": "main",
-  "ACCESS_TEAM": "<team-prefix>",
-  "ACCESS_AUD": "<application-audience-tag>",
-  "ACCESS_ADMINS": "owner@example.com",
   "GLASS_ENABLE_CUSTOM_DOMAIN": "true",
-  "GLASS_ENABLE_SITE_DOMAIN": "false"
+  "CLOUDFLARE_ACCOUNT_ID": "<account ID>",
+  "ACCESS_TEAM": "<team name>",
+  "ACCESS_AUD": "<application AUD>",
+  "ACCESS_ADMINS": "owner@example.com",
+  "STORAGE_BUDGET_BYTES": "5368709120"
 }
 ```
 
-All values in this JSON must be strings, including `"true"`, `"false"` and numeric limits. Store no credentials here. `ACCESS_TEAM` is the prefix of `https://<team-prefix>.cloudflareaccess.com`, not the entire URL. `ACCESS_ADMINS` must match the email allowed by the Access application.
+`GLASS_PAGES_PROJECT` may optionally fix the Pages target in the deployment environment. Otherwise choose it in Hosting. `GLASS_SITE_WORKER` and the old staging/domain variables are retained only for legacy rollback tooling; they do not select the new public deployment target.
 
-The build script generates bindings named `DB`, `BUCKET` and `ASSETS`. The selected database UUID and bucket name must be in this configuration so future deployments bind the same resources; editing dashboard bindings alone is insufficient.
+### 5. Bootstrap secrets
 
-### 5. Connect and bootstrap Studio first
+Generate a strong `STUDIO_SECRET` and `CI_TOKEN` once and save them as **runtime Worker secrets** before serving private data. Preserve `STUDIO_SECRET` across all upgrades; changing it makes stored credentials unreadable. Set the same CI value in the build secret as `GLASS_CI_TOKEN` only after the first Studio deployment is reachable.
 
-Select the Studio Worker, then **Settings → Builds → Connect**. Choose `Lapotron/Glass` and production branch `main`. Leave non-production branch builds off during bootstrap. Use the Studio row now and the reader row in step 7:
-
-| Pipeline | Root directory                | Build command                                                              | Deploy command                                  |
-| -------- | ----------------------------- | -------------------------------------------------------------------------- | ----------------------------------------------- |
-| Studio   | `infrastructure/cloud/studio` | `npm --prefix ../../.. ci && npm --prefix ../../.. run cloud:build:studio` | `npm --prefix ../../.. run cloud:deploy:studio` |
-| Reader   | `infrastructure/cloud/site`   | `npm --prefix ../../.. ci && npm --prefix ../../.. run cloud:build:site`   | `npm --prefix ../../.. run cloud:deploy:site`   |
-
-These commands are entered into the dashboard and executed by Cloudflare. Keep the explicit root directories and deploy scripts. The repository root's `wrangler.toml` belongs to local Pages Direct Upload; it is not the hosted Studio configuration.
-
-For **the first Studio deployment only**, set an encrypted build secret named `GLASS_CI_SECRETS` containing just the deployment API token:
+For the first deployment, an encrypted build secret named `GLASS_CI_SECRETS` can contain only:
 
 ```json
-{
-  "CLOUDFLARE_API_TOKEN": "<deployment-api-token>"
-}
+{"CLOUDFLARE_API_TOKEN":"<scoped deployment token>"}
 ```
 
-**The provided build deployment token is used directly**, so bootstrap does not call a coordinator that is not running yet. You can also supply the complete CI JSON immediately if its CI token matches the intended runtime key and the Access service-token pair already exists.
+The token needs account Workers Scripts Edit, D1 Edit, R2 Storage Edit and Cloudflare Pages Edit. Custom-domain management additionally needs Zone Read, DNS Edit and Workers Routes Edit for the selected zone. Access API permissions are needed only for automated Access provisioning/private branch previews; manually configured Access does not require them.
 
-Deploy Studio. The deploy script applies missing D1 migrations and uploads the application. Open `https://console.example.com/` and sign in as the owner. The deploy command automatically installs supplied connection defaults as encrypted Worker secrets. Site settings → Credentials shows **Provided by the Cloudflare deployment**; no second token entry is required. Explicit values saved in Studio remain private overrides.
+Cloudflare’s selected build deployment credential does not automatically authorize every API. Glass synchronizes supported connection defaults to encrypted runtime secrets during Studio deployment. Saved notebook values take precedence. Neither runtime secrets nor their plaintext values enter browser preferences, public configuration, logs or Pages output.
 
 ### 6. Complete the build credentials
 
-After Studio is reachable, replace the bootstrap `GLASS_CI_SECRETS` with this encrypted JSON. Add it to the reader's build secrets when connecting that pipeline:
+After Studio is reachable, update `GLASS_CI_SECRETS` in this **same Studio pipeline**:
 
 ```json
 {
-  "CLOUDFLARE_API_TOKEN": "<deployment-api-token>",
-  "GLASS_CI_TOKEN": "<same-value-as-runtime-CI_TOKEN>",
-  "CF_ACCESS_CLIENT_ID": "<service-token-client-id>",
-  "CF_ACCESS_CLIENT_SECRET": "<service-token-client-secret>"
+  "CLOUDFLARE_API_TOKEN":"<scoped deployment token>",
+  "GLASS_CI_TOKEN":"<same value as runtime CI_TOKEN>",
+  "CF_ACCESS_CLIENT_ID":"<service token client ID>",
+  "CF_ACCESS_CLIENT_SECRET":"<matching service token secret>"
 }
 ```
 
-`GLASS_CI_TOKEN` must match across the Studio and reader builds. Studio deployment maps it to runtime `CI_TOKEN` automatically. The Access service token must be included in the application's Service Auth policy. Its ID/secret remain build-only and cannot be recovered from existing secret metadata. `STUDIO_SECRET` stays a separately configured runtime secret and is never regenerated or replaced by credential synchronization.
+Create a private Deploy Hook on this Studio Worker’s Git build. Save it in Hosting → Pages publishing setup → Studio pipeline Deploy Hook. This avoids needing a separate user-scoped Workers Builds API token. Do not paste hook URLs or credentials into issues, Markdown or Git.
 
-The Studio deploy command uploads connection defaults through Wrangler `--secrets-file`, using a private temporary file outside the artifact and deleting it even after failure. It recognizes `CLOUDFLARE_API_TOKEN`, optional `BUILDS_API_TOKEN`, `BUILDS_DEPLOY_HOOK`, `ACA_REPORT_TOKEN`, and the complete `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` pair. These optional fields may also be supplied in `GLASS_CI_SECRETS`; use the same relevant secrets in the reader pipeline for CI operations. No secret enters public Wrangler `vars`, source control or reader output.
+The pipeline contacts only the exact configured Studio origin, with redirects disabled. A 302 Access login means the service token pair/policy needs correction. A 401 JSON response means the CI bearer does not match. Never forward credentials to a redirect destination or disable Access to fix CI.
 
-Cloudflare's selected Builds API token is supplied during deployment; Glass can reuse it when available. Automatic reuse does not expand permissions: D1 migrations need D1 Edit, and custom domains need the appropriate zone permissions. A managed token's default scopes may need adjustment. See [Cloudflare build configuration](https://developers.cloudflare.com/workers/ci-cd/builds/configuration/). Build variables and runtime secrets remain separate platform concepts; Glass performs this explicit synchronization. Saved Studio overrides take priority for Studio operations; removing one reveals its deployed default. Optional API credentials, deploy hooks and Access policies still need initial authorized configuration. Branch previews never receive production runtime connection defaults.
+### 7. Create the Pages target and publish
 
-### 7. Connect the reader and its Deploy Hook
+Open Hosting → Pages publishing setup. Check the connection, choose/create a **Direct Upload** Pages project and save the target. A Git-connected Pages project cannot accept this workflow. Set the real canonical site URL in site settings.
 
-Connect the reader Worker to the same repository using the reader row in the build table, the same production branch, `GLASS_CLOUD_CONFIG` and the completed `GLASS_CI_SECRETS`.
+Create content in hosted Studio or import a reviewed notebook. Git pushes do not copy a local notebook into cloud storage. Click Publish once. The captured runner performs Node rendering and validates the output, then runs `wrangler pages deploy`. It retains the exact deployment URL even when subsequent verification fails. Inspect uncertain deployments before retrying.
 
-Under **reader Worker → Settings → Builds → Deploy Hooks**, create a hook for the production branch. Save its URL in **Studio → Site settings → Credentials → Workers Builds Deploy Hook**. The runtime secret `BUILDS_DEPLOY_HOOK` is an alternative for operators managing secrets directly. Hook URLs are credentials; keep them out of Git, public configuration and screenshots. See [Deploy Hooks](https://developers.cloudflare.com/workers/ci-cd/builds/deploy-hooks/).
+The coordinator verifies the deployment marker at the returned Pages URL. A staging release is recorded as `staged`; it does not replace the current live-release pointer. Once the configured canonical domain is active in Pages, publication also verifies that exact domain before marking the release live.
 
-A hook avoids requiring a separate user-scoped Builds API token. An account-scoped Pages token cannot call the Builds API, even when it has permission to deploy Workers. It can still serve as the deployment token when its Workers/D1/R2/domain permissions are sufficient.
+### 8. Attach the domain after verification
 
-### 8. Import or create content, then publish staging
+Review the staging homepage, articles, search, media and security headers. Check `/api/bootstrap` remains 404 on the reader. Then add the public domain in Pages → Custom domains and follow Cloudflare’s DNS instructions. The zone must already exist in your Cloudflare account.
 
-New notebooks start with the deployment's Cloudflare account ID and no missing fixture portrait. Existing notebooks retain their saved settings: if a build reports that the account or canonical URL differs, compare **Site settings → Publishing** and **General → Site details** with the account and reader origin in Hosting, save, then approve a new publication. A source push rebuilds the preceding approved snapshot and cannot approve those setting changes. A newly created reader can continue serving Hello World until its first successful publication.
+For a legacy reader Worker, retain its code/deployment for rollback. Review the exact conflicting Worker route/custom-domain binding before detaching it and attaching Pages. Do not delete the private Studio, its storage, or the public media bucket. No routine Publish action deletes a Worker route or changes DNS. Verify `/assets/deployment.json` on the canonical domain, then Publish once more to record canonical verification. The old reader Worker can remain undeployed as rollback infrastructure.
 
-**Test saved R2 connection** runs directly in Studio without Workers Builds, including while a build is active. Missing account/bucket/domain/S3 credentials produce an immediate error. A configured check reads at most one S3 object listing, has a 15-second network timeout and never writes objects or returns their names. It checks the optional media-delivery credentials, not the private Studio storage binding. Saving private media in Studio does not require an S3 key pair.
+## Upgrading an existing two-pipeline installation
 
-In hosted Studio, import a portable notebook through **Backups → Import a notebook**, or configure a new notebook. If starting empty, upload a profile portrait or clear the starter portrait reference before the first build. Media preparation and other heavy operations use the configured build queue.
+1. Keep the existing Studio Worker, database, private bucket, encryption key, CI bearer, owner policy and service token.
+2. For the **one transition build**, add `"GLASS_PIPELINE_BOOTSTRAP":"true"` to public build configuration. This explicitly deploys the new Studio coordinator without calling an endpoint the previous version does not have. Remove the flag after the update succeeds. It is never an automatic fallback for failed authentication.
+3. Set the Studio build/deploy commands above. Create a Deploy Hook for this Studio pipeline and replace the saved old reader hook.
+4. Disable automatic Git builds on the old reader Worker. Keep its current public deployment serving during migration.
+5. Configure a separate Direct Upload Pages project in Hosting, Publish and verify staging. Follow the domain cutover steps only after review.
 
-The hosted notebook is independent of repository `content/`: Git code pushes rebuild an approved cloud snapshot. They do not initialize or overwrite cloud content from Git.
-
-Click **Build & Publish** in Studio to approve the first release. A production reader build started before an approved release exists stops with an instruction to publish from Studio; repeated dashboard retries alone cannot create that approval.
-
-Open the exact `GLASS_SITE_STAGING_ORIGIN` and verify the homepage, an article, media and search. Inspect the matching successful deployment in Studio and Cloudflare. Studio APIs must remain unavailable on the reader hostname. A queued job or uploaded artifact alone is not a verified publication.
-
-### 9. Enable the public domain
-
-Keep `GLASS_ENABLE_SITE_DOMAIN` set to `"false"` until staging is verified. Then change it to `"true"` in the reader's build configuration and start a new approved publication from Studio.
-
-For an existing Pages hostname, also set `GLASS_SITE_ZONE_ID` to the domain's zone ID. The reader uses the exact `hostname/*` route in that zone, preserving Pages DNS/project as a fallback. Deployment refuses conflicting routes and removes only its newly created first-cutover route if verification fails. Without a zone ID, the flag uses a Worker Custom Domain; use that mode when another product does not own the hostname's DNS record.
-
-Verify the public URL and matching deployment marker before retiring any previous site. Future pushes to the configured production branch rebuild the last approved release. Studio saves remain private; **Publish** approves new public content.
-
-### Optional isolated previews
-
-After production works, enable non-production branch builds if needed. The preview commands are:
-
-| Pipeline | Preview command                                  |
-| -------- | ------------------------------------------------ |
-| Studio   | `npm --prefix ../../.. run cloud:preview:studio` |
-| Reader   | `npm --prefix ../../.. run cloud:preview:site`   |
-
-Studio preview provisioning also needs Access application/policy write permission on the deployment token. Previews use isolated D1/R2 resources, their own encryption key and an owner-only Access application. The reader preview uses synthetic content. The production CI token and private Deploy Hook are not bound to private previews. Resource cleanup is manual; see [operation and recovery](#operation-and-recovery).
-
-## Custom names and settings
-
-Names in the walkthrough are examples. Choose resource names when creating them; copy account IDs, database UUIDs, Access AUD tags and zone IDs from Cloudflare rather than inventing them. R2 bucket names use 3–63 lowercase letters, digits and hyphens, without a leading or trailing hyphen; see [R2 naming requirements](https://developers.cloudflare.com/r2/buckets/create-buckets/).
-
-The public settings accepted by `GLASS_CLOUD_CONFIG` are:
-
-| Setting                      | Default or requirement                               | Customization and matching values                                                                                                                 |
-| ---------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GLASS_STUDIO_WORKER`        | `glass-studio`                                       | Studio Worker name; match the dashboard Worker and `name` in `infrastructure/cloud/studio/wrangler.jsonc`.                                        |
-| `GLASS_SITE_WORKER`          | `glass-site`                                         | Reader Worker name; match the dashboard Worker and `name` in `infrastructure/cloud/site/wrangler.jsonc`. Update the staging hostname accordingly. |
-| `GLASS_D1_NAME`              | `glass-studio`                                       | Chosen database's name.                                                                                                                           |
-| `GLASS_D1_ID`                | Explicit UUID for dashboard setup                    | Identifies the existing database containing the notebook. A name alone is not a substitute for this UUID.                                         |
-| `GLASS_PRIVATE_BUCKET`       | Explicit existing bucket for dashboard setup         | Chosen private R2 bucket containing notebook objects.                                                                                             |
-| `GLASS_STUDIO_ORIGIN`        | Example code default: `https://console.example.com` | Exact HTTPS Studio origin; match its Worker domain and Access application.                                                                        |
-| `GLASS_SITE_ORIGIN`          | Example code default: `https://example.com`         | Intended public website origin; match the notebook's public URL and deployment target.                                                            |
-| `GLASS_SITE_STAGING_ORIGIN`  | Required for staging                                 | Exact `https://<reader-worker>.<workers-subdomain>.workers.dev` address.                                                                          |
-| `GLASS_ENABLE_CUSTOM_DOMAIN` | Off unless `"true"`                                  | Enables the Studio custom-domain route; use `"true"` for the protected hostname in the walkthrough.                                               |
-| `GLASS_ENABLE_SITE_DOMAIN`   | Off unless `"true"`                                  | Enables reader domain deployment after staging succeeds.                                                                                          |
-| `GLASS_SITE_ZONE_ID`         | Optional                                             | Existing zone UUID for a reader route, particularly when retaining a Pages hostname.                                                              |
-| `GLASS_PRODUCTION_BRANCH`    | `main`                                               | Match the production branch in both Builds pipelines and the reader Deploy Hook.                                                                  |
-| `GLASS_WORKSPACE_ID`         | `glass`                                              | Stable workspace identity used by Studio/browser preferences. It does not create a separate database or namespace existing data.                  |
-| `STORAGE_BUDGET_BYTES`       | `5368709120` (5 GiB)                                 | Private storage safety budget in bytes; current code accepts a positive safe integer up to 8 GiB. This does not change Cloudflare billing limits. |
-| `CLOUDFLARE_ACCOUNT_ID`      | Required                                             | Account owning the selected Workers, D1 and R2 resources.                                                                                         |
-| `ACCESS_TEAM`                | Required                                             | Access team domain prefix.                                                                                                                        |
-| `ACCESS_AUD`                 | Required                                             | Studio Access application's AUD tag.                                                                                                              |
-| `ACCESS_ADMINS`              | Required                                             | Owner email allowlist, comma-separated when intentionally allowing several owners; match the Access policies.                                     |
-
-For example, a new deployment can use `notes-admin` and `notes-reader` Workers, a `notes-data` database, a `notes-private` bucket and production branch `production`. Set the corresponding variables, use the selected database's UUID, update both checked-in Wrangler `name` values with GitHub's web editor, and choose matching Worker/branch names in Cloudflare. Keep the build root directories and command names unchanged. Cloudflare requires the Worker name in its linked root configuration to match the dashboard Worker; see [Workers name requirements](https://developers.cloudflare.com/workers/ci-cd/builds/troubleshoot/#workers-name-requirement).
-
-The code-level binding names `DB`, `BUCKET` and `ASSETS`, along with the documented variable/secret keys, stay fixed. Customize the resource names they point to rather than renaming those bindings. Renaming bindings requires coordinated code changes.
-
-For an established installation, changing a setting is not a data migration. Selecting another database or bucket does not copy existing data. Copy and verify data before switching bindings, retain the old resources until verification, preserve the encryption key, and update origins, Access configuration, staging addresses and hooks together when changing Worker names or domains. Explicit individual build environment variables take precedence over values in `GLASS_CLOUD_CONFIG`; remove stale overrides when editing the JSON.
-
-Optional public-media R2 destinations and ACA Worker/database names are configured independently through their Studio settings; see [publishing](publishing.md) and [ACA](aca.md). The separate [dynamic prototype](dynamic-prototype.md) also owns its own deployment target. A separate private recovery bucket can have its own valid name and is not selected through `GLASS_PRIVATE_BUCKET`.
-
-## Dashboard troubleshooting
-
-| Symptom                                                       | Check                                                                                                                                     |
-| ------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| First Studio deployment tries to fetch deployment credentials | Supply the build deployment API token directly. A coordinator lookup is needed only if no deployment token is available.                  |
-| `Save the deployment token in Studio Credentials first`       | Update to the current deploy helper and redeploy with the build token available, or save an explicit Studio credential override.          |
-| Worker name mismatch or automatic name-fix PR                 | Match the linked dashboard Worker and its checked-in root Wrangler `name`; keep the retained root Pages config intact.                    |
-| Missing entry point or assets directory                       | Use the explicit infrastructure root and custom build/deploy commands in the table. Generated artifacts are created by the build stage.   |
-| Build gets an Access login page or authentication denial      | Check service token values, expiration and the Service Auth policy, then the separate CI token match.                                     |
-| Deploy stops with `fetch failed` / `unexpected redirect`      | The CI request reached a redirect before Wrangler ran. Follow the Access/build credential checks below; do not enable redirect following. |
-| Owner sign-in is rejected                                     | Match `ACCESS_TEAM`, application AUD and owner email to the Access application protecting the exact Studio origin.                        |
-| Reader says there is no approved release                      | Configure the reader Hook and publish from Studio once.                                                                                   |
-| Build still uses old credentials                              | Update the saved Studio token; later deployments fetch it from the private coordinator.                                                   |
-| Public deployment verification fails                          | Check exact origins and deployment marker; retain and inspect the returned URL before another upload.                                     |
-| D1 free daily write quota reached                             | Preserve unsaved drafts and wait for reset at 00:00 UTC; see recovery below. Repeated writes do not lift the limit.                       |
-
-### CI redirects during Studio deployment
-
-If the build ends with `Hosted Studio artifact` and `Success: Build command completed`, but `cloud:deploy:studio` then fails with `TypeError: fetch failed` and `unexpected redirect`, compilation succeeded. With `GLASS_CI_TOKEN` present, the deploy script first requests `/__ci/deployment-credentials` from `GLASS_STUDIO_ORIGIN`. An Access login redirect prevents this request from reaching Studio; an origin redirect can also cause the failure. Lucide's `use client` warnings are unrelated to this deploy-stage error.
-
-For a **first deployment or a recreated Studio**, supply `CLOUDFLARE_API_TOKEN` in the bootstrap build secret from step 5 (or select a Builds token with the required scopes). The deploy script uses it directly and synchronizes runtime connection defaults. Complete the reader CI secrets and Access Service Auth policy before starting queued operations. Older releases fetched the coordinator whenever `GLASS_CI_TOKEN` was present; update the source or use the token-only bootstrap JSON when deploying those releases.
-
-For an **existing Studio**, check these settings before retrying:
-
-1. Set `GLASS_STUDIO_ORIGIN` to the exact active HTTPS hostname, such as `https://console.example.com`, in both pipelines. Remove `/studio/`, query strings and stale individual overrides. The `/__ci/` request must reach this hostname directly.
-2. In **Workers & Pages → Studio Worker → Settings → Builds → Variables and secrets**, verify that `GLASS_CI_SECRETS` includes both `CF_ACCESS_CLIENT_ID` and `CF_ACCESS_CLIENT_SECRET` from the same unexpired Access service token. These are build credentials; adding them only to Worker runtime secrets does not supply them to Builds.
-3. In **Zero Trust → Access controls → Applications → your Studio application → Policies**, authorize that service token with action **Service Auth** and an **Include → Service Token** rule. Protect the whole active Studio hostname. The owner's email Allow policy remains separate. An ordinary Allow policy does not perform machine authentication; see Cloudflare's [service-token documentation](https://developers.cloudflare.com/cloudflare-one/access-controls/service-credentials/service-tokens/).
-4. Make sure build `GLASS_CI_TOKEN` equals runtime `CI_TOKEN`. An incorrect CI token produces Studio's `Build authentication required` response after Access has allowed the request; it does not fix an Access login redirect.
-
-The CI client refuses all redirects and reports Access login redirects, other redirects and authentication failures separately. It never follows a redirect with build credentials or logs its login URL/query. Strict Access service-token authentication may return `401` or `403` instead of a redirect; check the same service-token pair and Service Auth policy. Fix the configuration before starting another deploy; do not bypass Access or fall back silently to a different deployment credential.
-
-## Scripted setup alternative
-
-The one-time `scripts/cloud-setup.ts` command can provision owned private D1/R2 resources, Access owner policy, machine service token and Studio Worker instead of manual dashboard setup. Its private `.studio/cloud/setup.json` supports safe resumption; keep it outside Git and backups intended for sharing. Do not regenerate the encryption key on subsequent deployments. This operator workflow is separate from the dashboard-only walkthrough above.
-
-## Notebook migration
-
-Finish saves and local jobs first. Export the explicitly selected root:
-
-```sh
-npm run cloud:export -- --root /absolute/notebook --out /private/export-folder
-```
-
-`--include-private-settings` creates a restricted export that also includes connection and service settings. It contains credentials and must never be committed or uploaded to a public bucket. The export includes canonical content, revisions, Trash, collection histories, originals, backups, build artifacts, job history and supported private reports. It excludes generated caches, process leases and machine setup secrets. A second checksum pass rejects a notebook that changed during export.
-
-New exports keep private files under visible `data/private/` folders, with optional `storagePath` in each manifest record preserving the actual `.studio/...` notebook path. Every stored path segment beginning with `.` or `_` receives an extra leading underscore, keeping hidden filenames visible without collisions with existing underscore names. This avoids Safari folder pickers omitting hidden history or marker files such as `.complete`. Canonical paths and checksums stay unchanged. Older manifests keep their recorded mapping and remain importable when their hidden files are selected; re-export an old folder if the browser omits those files.
-
-In hosted Studio → Hosting, choose the export folder, review the file count and private-settings notice, then import. Small files use bounded requests; larger files use resumable, checked 8 MiB parts in private R2. The browser retains only a session ID and manifest fingerprint. Pause or reselect the original folder to resume within 24 hours. Uploads are staged and checksum-checked before one transaction replaces the notebook. Omitted private credentials/services are retained; a restricted export explicitly includes replacements. A private pre-import object index retains the preceding immutable references for recovery; it is not a portable standalone backup. A newer cloud edit invalidates the reviewed version. Keep an independent recovery copy before replacing an established cloud notebook.
-
-The one-time CI importer additionally saves the current cloud notebook privately, refuses to overwrite newly authored cloud content, and preserves newer private cloud settings. It is disabled after the initial migration succeeds. Verify file checksums and open real entries/media after import; a successful upload alone does not establish a usable migration.
+A Git push after the upgrade updates Studio only. Publish consumes the captured notebook, not unapproved content from the repository. Do not retry a different Dashboard build UUID to take over a queued Publish; cancel the unclaimed request in Hosting and start the intended Publish again.
 
 ## Operation and recovery
 
-Heavy operations wait in one build queue and may take minutes. Hosting shows their status; Build history retains public build/deployment records. Heartbeats prevent long-running work appearing idle. A running job fails after 25 minutes without a heartbeat; a queued job has a two-hour allowance. Inspect Cloudflare's build log before retrying an uncertain deployment. There is no automatic retry of an uncertain upload.
+Hosting → Storage and history separates logical categories from reserved physical bytes. Identical media and files share SHA-256 blobs. Current files, unexpired imports/transfers/operations, recoverable deleted history, snapshots, approved/live releases, active jobs and the configured recent successful releases protect their blobs.
 
-Hosting can cancel an unclaimed queued request. This prevents a later build from claiming it; it does not pretend to stop a running Cloudflare build. Review its Cloudflare status before submitting another heavy operation. Hosted Media loads its file list immediately; **Check usage** explicitly queues the full reference audit.
+Default policy retains downloadable artifacts for the latest **three** successful releases plus pinned releases; shared render cache is **128 MiB / seven days**. Expiring artifacts keeps build reports, source/media ownership manifests and actual deployments. Generated public assets live in separate artifact indices, not thousands of canonical D1 file rows. Browser generated-content caches are bounded to 64 MiB combined: 32 MiB compiler results, 8 MiB source math, 8 MiB component previews and 16 MiB preview Blob URLs. This is a cache budget, not a bound on browser DOM, decoded image or rendering memory. Clearing caches never removes authored content.
 
-Hosted image and attachment uploads finish through the same private build queue. The preparation/file dialog distinguishes sending the request, waiting for Cloudflare to start, and processing after the runner claims it, with a **Cloud operations** link that opens Hosting separately and keeps the selected file in the original dialog. Cloudflare startup and dependency installation can take longer than the file transfer itself. A queued status does not mean the bytes were saved; wait for completion. Failed jobs keep their actual error and are not automatically re-uploaded. Busy image dialogs keep their close controls disabled until the accepted operation settles.
+Safe cleanup detaches expired generated output, then acquires a storage lease, recomputes roots and deletes only known application-owned unreachable objects after a one-day grace period. Writers pin before R2 writes; commit/pin guards block races with collection. Damaged reference indices block physical deletion. Known abandoned multipart uploads are aborted before their reservations are released; unknown upload reservations remain conservative. Failed/conflicting staged build output remains recoverable for seven days. Bounded batches expose whether more work remains. Cleanup never silently raises budgets or deletes source/original/history references. Automatic cleanup runs hourly after policy activation or publication. A storage quota pause requires explicit pruning or a reviewed budget change. The physical budget counts each immutable blob once; the portable workspace has a separate 8 GiB logical-size ceiling. Deduplicated filenames do not consume the same physical bytes again.
 
-Automatic scheduling performs a small settings/cache read while idle. Due entry promotion is captured in the build queue before the configured build/publication follows. A scheduler failure is held until the notebook changes or the author runs it manually. Automatic backup errors require review.
+History offers search/category filters, pagination, single/bulk deletion, exact exports, recovery and reviewed Purge now. Deleted history and backups remain recoverable for **seven days**. Purging a recovery reference does not promise immediate byte reclamation: another snapshot or retained release may still own the same blob.
 
-Private storage reservations include staged and failed-job objects, with a default 5 GiB safety budget. Removing a manifest file does not immediately reclaim immutable objects. The coordinator also limits registered heavy jobs to 100 per UTC month. These are safety limits, not Cloudflare billing measurements; check actual resource usage in the dashboard. Free Workers Builds has bounded concurrency and run time. Avoid unbounded preview resource creation and preserve D1 slots for isolated previews.
+Legacy hidden migration recoveries are converted one at a time into visible safety snapshots before collection; generated output leaves that recovery graph, while source, originals and private settings remain protected. New migrations create visible safety snapshots directly.
 
-D1 Free has an account-wide daily allowance of 100,000 row writes, including index writes. Its reset is 00:00 UTC. Large imports can use much of that allowance and temporarily stop Studio saves/publication and ACA collection. Read-only Studio pages do not register actors or perform no-op writes. Already-reserved objects avoid repeated storage-reservation writes. Routine captures omit old public artifact bodies from both their manifest and authorization index, retaining source/transfer metadata for recovery and asset protection. Artifact export captures the selected artifact; a full notebook reset remains an explicitly large operation.
+Native backups are immutable snapshot manifests sharing existing blobs. Daily backups run directly in the Worker, without CI. Manual/safety snapshots remain until the owner deletes them. Download assembly runs in a browser worker, streams to a filesystem destination when supported, and otherwise creates 32 MiB OPFS-backed parts. If private browser storage is unavailable, only archives up to 32 MiB can use memory; larger downloads require a browser with filesystem or OPFS support. Download every part and concatenate them in order before importing; temporary parts use browser storage, are checked against available quota and are removed when the export dialog closes. A closed/failed download never deletes the saved snapshot. Older saved compressed archives remain downloadable and can be reviewed through the same streaming import worker.
 
-When quota stops a rollout before upload, the private coordinator can arm `/__ci/deferred-build`. It records one bounded operational R2 item for 00:05 UTC after the reset and rebuilds only the last approved release. Cron holds routine scheduled jobs during this recovery window. An R2 conditional lease prevents duplicate triggers; a superseding approval cancels the old recovery. An uncertain trigger is retained for manual Cloudflare inspection and is never repeated automatically. Hosting shows the deferred state. This record does not bypass D1 limits or make fresh edits public; saves still wait for the quota reset.
+Import accepts existing .json.gz versions 1/2 and streaming .tar.gz version 3. Legacy JSON retains its 384 MiB expanded ceiling. Large archives use incremental checksums and checked 8 MiB transfers; no whole-media buffer is created in the Worker. Resume with the exact same archive for seven idle days. Validation and review precede one atomic activation; a newer cloud edit rejects activation and keeps staged bytes. A safety snapshot is visible in Backups. Connection/service credentials, backup preferences and deployment identities survive ordinary portable imports.
 
-Studio code deploys first read the migration journal. They apply SQL only when a migration is missing, allowing an unchanged schema deployment while the daily write allowance is exhausted. A read-only journal check is not proof that new migrations can run.
+### Migrating an existing local notebook
 
-The preview helper permits two owned isolated preview databases, reserving account slots for production. Preview resources use the `glass-preview-` prefix and a stable branch hash. Remove obsolete owned previews and their resources through Cloudflare when those slots are no longer needed; deleting a Git branch alone does not reclaim D1/R2 resources.
+```sh
+npm run cloud:export -- --root /absolute/notebook --out /new/export-folder
+```
 
-Generated CI files and result downloads larger than 8 MiB use private multipart transfers, supporting the 4 GiB per-file application limit. Backup archives use the [streaming version-3 format](recovery.md#streaming-version-3-and-resumable-imports). Available storage and Cloudflare build disk/time still bound a job. Private immutable objects do not yet have automatic garbage collection; retained storage can exceed the visible notebook size.
+The default version-2 folder export includes content, all media, private originals, revisions, About/collection history and Trash. It excludes builds, renderer caches, jobs, backup archives, reset archives and machine state. Identical files are stored once under `data/blobs/<sha256>`, with a manifest mapping logical paths. This prevents generated build output from turning a small notebook into a multi-gigabyte migration.
 
-Remote MCP uses `/mcp`, a scoped authoring key, and Cloudflare Access machine credentials. Tools can inspect syntax/reference/media, prepare ordinary drafts and queue private full validation or previews. `job_status` reads only the owner's authoring jobs. Published entries and publication are outside the authoring scope. Keep tokens in the MCP client's private configuration; revoke unused keys in Hosting.
+`--profile full` is an explicit archival export for operators; normal Hosting import filters generated/operational files from legacy full exports. `--include-private-settings` explicitly includes credentials and must remain private. Version-1 folder manifests and their recorded `storagePath` mappings remain readable. Folder paths must remain inside the export; symlinks/path traversal are rejected.
 
-## Verification
+Choose the folder in Hosting, review counts and available storage, then import. Uploads skip already verified blob hashes and resume checked parts. Migration can pause for quota/storage limits without making a partial notebook visible. Keep the original local notebook and an independent recovery copy until cloud content, media bytes and histories have been verified.
 
-Run repository typecheck, lint, unit tests, static build, console build, skills check and browser tests. `playwright.cloud.config.ts` exercises an isolated D1/R2 workspace and the real Node job bridge in Chromium/WebKit; it never mutates the author's notebook. `cloud-runtime.test.ts` boots the production bundle in workerd and tests auth boundaries independently from the browser seam.
+## CI redirects during Studio deployment
 
-Verify separately on Cloudflare: unauthenticated private URLs require Access; owner login works; imported entries, media and revisions round-trip; a real GitHub build succeeds on Linux; staging serves the exact deployment marker, expected CSP and private-API 404s. Local harness success does not prove live publication or preview isolation.
+First deployment supplies its deployment token directly and does not require a running coordinator. Updates with a CI token must authenticate the exact Studio origin. `GLASS_PIPELINE_BOOTSTRAP=true` is only a reviewed first/transition deployment choice, never an authentication-error recovery rule.
 
-Linux Builds uses the packaged Chromium executable for static diagrams, with normal multiple-process operation. Retaining its Lambda `--single-process` flag can close Chromium when the first page context is disposed and fail later diagrams. CI verifies the canonical reader URL; the coordinator probes the configured reader `workers.dev` URL independently because same-zone Worker routes cannot be fetched as ordinary cross-Worker origins.
+A redirect to `<team>.cloudflareaccess.com` requires the matching Access service-token pair and Service Auth policy for the entire hostname. A Cloudflare 403 often means that policy is absent or authorizes a different service token. A JSON 401 from `/__ci/` means the Glass CI token differs. Check the exact build environment and deployment before retrying; never expose secrets in logs.
+
+## Names, previews and optional services
+
+Worker, database, bucket, Pages project, branch and hostnames are customizable through the fields above. R2 requires valid lowercase bucket names. Use existing resource IDs on upgrades. A public-media CDN bucket and ACA Worker/D1 are optional independent resources; their configuration does not grant public access to the private notebook bucket.
+
+Trusted branch previews use isolated synthetic notebooks, D1/R2 resources, a distinct encryption key and owner-only Access. They never inherit production CI hooks or secrets. Preview provisioning has a bounded resource allowance and requires the necessary Access permissions. Production publish credentials must not be made available to untrusted pull requests. Preview cleanup remains an explicit operator action.
+
+The optional operator `scripts/cloud-setup.ts` workflow provisions owned resources. Its private `.studio/cloud/setup.json` is recovery/setup state, not a portable notebook or a public artifact. Preserve it and the existing encryption key when upgrading; do not run provisioning against another installation’s saved state.
+
+See [shared contracts](contracts.md), [recovery](recovery.md), [media](media.md), [publishing](publishing.md), [ACA](aca.md) and [the self-contained dashboard prompt](cloudflare-ai-deployment-prompt.md).
 
 ## Cloud operations stay queued
 
-A configured Deploy Hook proves that a trigger is saved; it does not prove the build can reach Studio. Hosting polls active jobs only while visible, shows the captured build-log link and flags unclaimed requests after five minutes without silently failing or retrying them. Saved media-protection status reads execute directly in the Worker; opening Settings must not start a build.
+Daily operations no longer enter the build queue. For an actual Publish or explicit ACA infrastructure job, verify the Studio pipeline’s root/build/deploy fields and private Deploy Hook, then inspect that exact build UUID. Confirm the Access service-token pair and Service Auth policy and the Glass CI bearer. A different Dashboard retry is not the captured request. Cancel an unclaimed operation in Hosting and start the intended operation again only after resolving setup. Native paused batches resume in Hosting → Storage and history → Recovery and require no CI.
 
-1. Open the captured **Build log** in Hosting. Check the reader pipeline's root, build and deploy fields against the table above. An executable root-directory path in the build-command field fails before Glass can claim the job.
-2. Set the reader's public `GLASS_CLOUD_CONFIG`, including the exact Studio hostname and existing resource names. Build settings and runtime variables are independent.
-3. For an Access redirect/401/403, verify the service-token pair in encrypted `GLASS_CI_SECRETS`, the whole-hostname **Service Auth** policy, and the separate CI token match. Email Allow alone does not authorize machines. Never disable Access to solve this.
-4. After fixing setup, inspect the old build. Cancel an **unclaimed** request in Studio and explicitly run the intended operation again. Cloudflare Dashboard Retry creates another build UUID; it cannot claim the old request's UUID. Do not trigger a public publication just to test maintenance.
+## Large archive verification
 
-If a build reports `D1_ERROR: UNIQUE constraint failed: index 'cloud_jobs_one_active'`, an older coordinator tried to create a second active job, often because Dashboard Retry started a different build while the original request remained queued. Keep the index: it protects concurrent publication and maintenance. Inspect the original captured build in Hosting; if it failed before claiming the request, cancel that unclaimed request and run the intended operation from Studio. A running operation must finish or be investigated rather than cancelled through the unclaimed-request control.
-
-Current coordinators report this collision as an actionable 409 without taking over the existing job. They create a rebuild and its snapshot authorization index in one D1 batch, preserve cancellation during claim/trigger races, and allow a duplicate claim only for the same build and commit. This requires updating the **Studio Worker**, which owns the coordinator; updating only the reader build script does not change a deployed coordinator. 5. Check an actual transition to Running and Succeeded. A registered build, a saved token or a successful Studio code deployment is not a completed notebook operation.
-
-Cloudflare automatically provides the build's selected deployment token, but it does not create Glass CI tokens, Access service policies, R2 S3 pairs or an author-approved public release. Glass now synchronizes available connection defaults during Studio deployment so an already supplied token need not be pasted into Studio again.
+`npm run quality:cloud-storage` uses a disposable persistent Chromium profile, synthetic multi-GiB media, the actual export worker, OPFS-backed parts and streamed checksum verification. It samples only that browser process tree and removes the profile afterward. The default fixture exceeds 2 GiB; `GLASS_BACKUP_BENCH_BYTES` can select a smaller diagnostic fixture. This establishes browser transfer behavior, not live R2 throughput or Cloudflare free-plan CPU headroom. Local notebook archive verification remains `npm run quality:backups`.

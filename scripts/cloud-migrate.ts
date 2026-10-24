@@ -2,7 +2,7 @@
 import { promises as fs, createReadStream, constants } from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { cloudExportFilePath } from '../src/shared/cloud-migration.js';
+import { portableNotebookPath, notebookCategory } from '../src/shared/notebook-data.js';
 const arg = (name: string) => {
   const index = process.argv.indexOf('--' + name);
   const value = index < 0 ? undefined : process.argv[index + 1];
@@ -18,6 +18,7 @@ Options:
   --root PATH                  Required local notebook folder containing content/site.json.
   --out PATH                   New destination folder; existing destinations are never overwritten.
   --include-private-settings   Include connection/service credentials in this private export.
+  --profile full               Also include operational history and retained generated output.
   --help                       Show this help without exporting anything.
 
 Import the resulting folder through hosted Studio → Hosting. This exports local files;
@@ -64,6 +65,23 @@ const allowed = [
   '.studio/health',
 ];
 const includePrivate = process.argv.includes('--include-private-settings');
+const profile = arg('profile') || 'portable';
+if (!['portable', 'full'].includes(profile))
+  throw new Error('Choose portable or full export profile.');
+if (profile === 'portable')
+  for (let index = allowed.length - 1; index >= 0; index--)
+    if (
+      ![
+        'content',
+        '.studio/revisions',
+        '.studio/trash',
+        '.studio/history',
+        '.studio/project-history',
+        '.studio/pages',
+        '.studio/media-originals',
+      ].includes(allowed[index])
+    )
+      allowed.splice(index, 1);
 if (includePrivate) allowed.push('.studio/connections.json', '.studio/services');
 const files: {
   path: string;
@@ -89,14 +107,22 @@ async function copy(relative: string) {
       if (!entry.startsWith('.') && !entry.startsWith('._') && !entry.endsWith('.lock'))
         await copy(relative + '/' + entry);
   } else if (stat.isFile()) {
-    const storagePath = cloudExportFilePath(relative);
-    const destination = path.join(output, 'data', storagePath);
+    const privateSetting =
+      relative === '.studio/connections.json' || relative.startsWith('.studio/services/');
+    if (
+      profile === 'portable' &&
+      !portableNotebookPath(relative) &&
+      !(includePrivate && privateSetting)
+    )
+      return;
     const hashFile = async (file: string) => {
       const hash = createHash('sha256');
       for await (const chunk of createReadStream(file)) hash.update(chunk);
       return hash.digest('hex');
     };
     const sha = await hashFile(source);
+    const storagePath = 'blobs/' + sha;
+    const destination = path.join(output, 'data', storagePath);
     if (verifying) {
       const previous = indexed.get(relative);
       if (!previous || previous.sha !== sha || previous.modified !== stat.mtime.toISOString())
@@ -109,7 +135,11 @@ async function copy(relative: string) {
     if (files.length >= 30000)
       throw new Error('A cloud migration export supports up to 30,000 files.');
     await fs.mkdir(path.dirname(destination), { recursive: true, mode: 0o700 });
-    await fs.copyFile(source, destination, constants.COPYFILE_FICLONE);
+    try {
+      await fs.copyFile(source, destination, constants.COPYFILE_EXCL | constants.COPYFILE_FICLONE);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+    }
     await fs.chmod(destination, 0o600);
     if ((await hashFile(destination)) !== sha)
       throw new Error('The notebook changed during export. Wait for saves and try again.');
@@ -137,10 +167,22 @@ try {
     JSON.stringify(
       {
         format: 'glass-cloud-workspace',
-        version: 1,
+        version: 2,
+        profile,
         privateSettings: includePrivate,
         createdAt: new Date().toISOString(),
         files,
+        summary: Object.fromEntries(
+          [...new Set(files.map((file) => notebookCategory(file.path)))].map((category) => [
+            category,
+            {
+              files: files.filter((file) => notebookCategory(file.path) === category).length,
+              bytes: files
+                .filter((file) => notebookCategory(file.path) === category)
+                .reduce((sum, file) => sum + file.bytes, 0),
+            },
+          ]),
+        ),
       },
       null,
       2,

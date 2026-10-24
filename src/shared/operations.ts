@@ -42,6 +42,12 @@ export type EntryTrashItem = SelectedItem & {
   file: string;
   deletedAt: string;
 };
+export const entryTrashRecordSchema = z.object({
+  id: z.string().regex(/^[\w-]{1,100}$/),
+  kind: z.enum(['posts', 'lab']),
+  file: z.string().regex(/^[^/\\\0]+\.md$/),
+  deletedAt: z.iso.datetime(),
+});
 export const photoTrashRecordSchema = z
   .object({
     version: z.literal(1),

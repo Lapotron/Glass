@@ -51,7 +51,15 @@ async function prepare() {
   await ready;
   assets ||= await (await fetch('/cloud-reader-assets.json')).json();
 }
-let lastPreview: string | undefined;
+const previews = new Map<string, number>();
+let previewBytes = 0;
+function releasePreview(url: string) {
+  const bytes = previews.get(url);
+  if (bytes === undefined) return;
+  previewBytes -= bytes;
+  previews.delete(url);
+  URL.revokeObjectURL(url);
+}
 export async function cloudPreview(route: string, input: unknown, signal?: AbortSignal) {
   await prepare();
   signal?.throwIfAborted();
@@ -90,10 +98,16 @@ export async function cloudPreview(route: string, input: unknown, signal?: Abort
   }).finally(() => signal?.removeEventListener('abort', abort));
   if (route === 'preview') {
     const html = result.html.replace('<head>', '<head><base href="' + location.origin + '/">');
-    const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-    const old = lastPreview;
-    lastPreview = url;
-    if (old) setTimeout(() => URL.revokeObjectURL(old), 60000);
+    const blob = new Blob([html], { type: 'text/html' });
+    if (blob.size > 16 * 1024 ** 2)
+      throw new Error(
+        'This preview exceeds the 16 MiB preview limit. Source remains saved; split the preview into smaller sections.',
+      );
+    const url = URL.createObjectURL(blob);
+    previews.set(url, blob.size);
+    previewBytes += blob.size;
+    while (previews.size > 4 || previewBytes > 16 * 1024 ** 2)
+      releasePreview(previews.keys().next().value!);
     return { url };
   }
   return result;

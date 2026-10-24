@@ -28,8 +28,6 @@ const activeJobConflict = () =>
   );
 const isActiveJobConflict = (error: unknown) =>
   /UNIQUE constraint failed: index ['"]cloud_jobs_one_active['"]/i.test(String(error));
-const isBuildIdConflict = (error: unknown) =>
-  /UNIQUE constraint failed: cloud_jobs\.build_uuid\b/i.test(String(error));
 const allowed =
   /^\/api\/(?:preview$|content(?:\/|$)|trash(?:\/|$)|photos(?:\/|$)|media(?:\/|$)|backups(?:\/|$)|backup-settings(?:\/|$)|maintenance$|notebook\/reset|exports\/|jobs\/|projects\/github|cloud-media(?:\/|$)|search-console(?:\/|$)|aca(?:\/|$)|analytics(?:[-/]|$)|services\/|cloudflare(?:\/|$)|integrations\/|authoring\/|schedule(?:\/|$)|pages\/about|library\/undo)/;
 export function queuedPath(path: string) {
@@ -235,100 +233,10 @@ export async function claimBuild(env: CloudEnv, uuid: string, commit: string, br
       if (active?.state === 'queued' && !active.build_uuid)
         throw new CloudError('Build registration is settling. Retry this claim.', 503);
       if (active) throw activeJobConflict();
-      const current = await env.DB.prepare(
-        'SELECT approved_release FROM cloud_control WHERE id=1',
-      ).first<{ approved_release: string | null }>();
-      if (!current?.approved_release)
-        throw new CloudError(
-          'Import the notebook and approve its first release in Studio before deploying the public site.',
-          409,
-        );
-      const release = await env.DB.prepare('SELECT * FROM cloud_releases WHERE id=?')
-        .bind(current.approved_release)
-        .first<{ version: number; manifest_key: string }>();
-      if (!release) throw new CloudError('The approved release is unavailable.', 503);
-      const sourceJob = release.manifest_key.match(/^jobs\/([^/]+)\/manifest\.json$/)?.[1];
-      if (!sourceJob) throw new CloudError('Approved release has no captured object index.', 503);
-      const now = new Date().toISOString(),
-        id = crypto.randomUUID();
-      job = {
-        id,
-        kind: 'publish',
-        actor: 'github',
-        version: release.version,
-        request: '{}',
-        build_uuid: uuid,
-        state: 'queued',
-        created: now,
-        updated: now,
-        result_key: null,
-        error: null,
-        release_id: current.approved_release,
-        commit_sha: commit,
-      };
-      const source = await env.BUCKET.get(release.manifest_key);
-      if (!source) throw new CloudError('Release snapshot is missing.', 503);
-      const captured = JSON.parse(await source.text()) as WorkspaceManifest;
-      // Credentials are operational state. Refresh them when code rebuilds a previously approved release.
-      const operational = (
-        await env.DB.prepare(
-          "SELECT * FROM cloud_files WHERE path='.studio/connections.json' OR path GLOB '.studio/services/*'",
-        ).all<import('./types.js').FileRecord>()
-      ).results;
-      captured.files = [
-        ...captured.files.filter(
-          (file) =>
-            file.path !== '.studio/connections.json' && !file.path.startsWith('.studio/services/'),
-        ),
-        ...operational,
-      ];
-      await putObject(env, 'jobs/' + id + '/manifest.json', JSON.stringify(captured));
-      const statements = [
-        env.DB.prepare(
-          'INSERT INTO cloud_jobs(id,kind,state,actor,version,request,build_uuid,created,updated,release_id,commit_sha) VALUES(?,?,?,?,?,?,?,?,?,?,?)',
-        ).bind(
-          id,
-          job.kind,
-          'queued',
-          'github',
-          job.version,
-          '{}',
-          uuid,
-          now,
-          now,
-          job.release_id,
-          commit,
-        ),
-        env.DB.prepare(
-          "INSERT INTO cloud_job_files(job_id,path,sha,encrypted) SELECT ?,path,sha,encrypted FROM cloud_job_files WHERE job_id=? AND path!='.studio/connections.json' AND path NOT GLOB '.studio/services/*'",
-        ).bind(id, sourceJob),
-      ];
-      // Authorize exactly the operational bytes captured above, even if settings change during R2 I/O.
-      for (let offset = 0; offset < operational.length; offset += 500)
-        statements.push(
-          env.DB.prepare(
-            "INSERT INTO cloud_job_files(job_id,path,sha,encrypted) SELECT ?,json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]') FROM json_each(?)",
-          ).bind(
-            id,
-            JSON.stringify(
-              operational
-                .slice(offset, offset + 500)
-                .map((file) => [file.path, file.sha, file.encrypted]),
-            ),
-          ),
-        );
-      try {
-        // The job and its blob authorization index become visible together, or neither is created.
-        await env.DB.batch(statements);
-      } catch (error) {
-        if (!isActiveJobConflict(error) && !isBuildIdConflict(error)) throw error;
-        // An identical claim may have won the race; another build must never take over its job.
-        const existing = await env.DB.prepare('SELECT * FROM cloud_jobs WHERE build_uuid=?')
-          .bind(uuid)
-          .first<CloudJob>();
-        if (!existing) throw activeJobConflict();
-        job = existing;
-      }
+      throw new CloudError(
+        'No captured Publish request belongs to this build. Git pushes update Studio only.',
+        404,
+      );
     }
   }
   if (!['queued', 'running'].includes(job.state))

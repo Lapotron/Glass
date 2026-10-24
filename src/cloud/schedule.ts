@@ -1,6 +1,9 @@
 import { CloudWorkspace } from './workspace.js';
 import { withWorkspace } from './filesystem.js';
-import { Store } from '../engine/store.js';
+import { NativeStore } from './native-store.js';
+import { NativeData } from './native-data.js';
+import { backupSettingsSchema } from '../shared/operations.js';
+import { PrivateSettings } from '../server/configuration.js';
 import { enqueue, type CloudJob } from './jobs.js';
 import { persistHistory } from './history.js';
 import type { CloudEnv } from './types.js';
@@ -83,29 +86,59 @@ export async function cloudSchedule(env: CloudEnv, manual = false) {
     await cache(Number.isFinite(backupDue) ? new Date(backupDue).toISOString() : null);
     return { running: false, pendingIds: [] };
   }
-  const ws = await new CloudWorkspace(env).load(true);
+  const ws = await new CloudWorkspace(env).load('catalog');
   return withWorkspace(ws, async () => {
     try {
-      const model = await new Store('/workspace').snapshot();
+      const store = new NativeStore(ws),
+        model = await store.snapshot();
       const scheduled = model.entries.filter((entry) => entry.status === 'scheduled');
       const due = scheduled.filter((entry) => Date.parse(entry.publishAt) <= Date.now());
       if ((manual || model.site.publishing.scheduleEnabled) && due.length) {
-        const job = await enqueue(
-          new Request(env.STUDIO_ORIGIN + '/api/schedule/prepare', { method: 'POST' }),
-          env,
-          ws,
-          { id: 'scheduler', email: 'scheduler' },
-        );
-        return { running: true, pendingIds: due.map((entry) => entry.id), lastJob: job.id };
+        const ids = await store.publishDue();
+        await ws.commit('scheduler');
+        if (model.site.publishing.scheduleAction === 'publish') {
+          const job = await enqueue(
+            new Request(env.STUDIO_ORIGIN + '/api/jobs', { method: 'POST' }),
+            env,
+            ws,
+            { id: 'scheduler', email: 'scheduler' },
+            'publish',
+          );
+          return { running: true, pendingIds: ids, lastJob: job.id };
+        }
+        return { running: false, pendingIds: [], promoted: ids };
       }
       if (!manual && backupDue <= Date.now()) {
-        const job = await enqueue(
-          new Request(env.STUDIO_ORIGIN + '/api/backup-settings/run', { method: 'POST' }),
-          env,
-          ws,
-          { id: 'scheduler', email: 'scheduler' },
+        const service = new NativeData(env),
+          record = await service.snapshot(ws, 'automatic');
+        const settings = new PrivateSettings(
+            '/workspace/.studio/backup-settings.json',
+            backupSettingsSchema,
+          ),
+          previous = await settings.read();
+        await settings.save(
+          { ...previous.value, lastSuccess: new Date().toISOString(), error: '' },
+          previous.revision,
         );
-        return { running: true, pendingIds: [], lastJob: job.id };
+        await ws.commit('scheduler');
+        const old = (
+          await env.DB.prepare(
+            "SELECT id FROM cloud_snapshots WHERE kind='automatic' AND deleted IS NULL ORDER BY created DESC LIMIT -1 OFFSET ?",
+          )
+            .bind(previous.value.keepAutomatic)
+            .all<{ id: string }>()
+        ).results;
+        if (old.length)
+          await env.DB.prepare(
+            'UPDATE cloud_snapshots SET deleted=?,expires=? WHERE id IN (SELECT value FROM json_each(?))',
+          )
+            .bind(
+              new Date().toISOString(),
+              new Date(Date.now() + 7 * 86400000).toISOString(),
+              JSON.stringify(old.map((row) => row.id)),
+            )
+            .run();
+        return { running: false, pendingIds: [], backup: record.id };
       }
       const next = Math.min(
         backupDue,

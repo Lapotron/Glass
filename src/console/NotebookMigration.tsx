@@ -11,6 +11,7 @@ import {
 } from '../shared/backup-transfer.js';
 import type { CloudStatus } from '../shared/cloud-builds.js';
 import { validCloudExportPath } from '../shared/cloud-migration.js';
+import { portableNotebookPath } from '../shared/notebook-data.js';
 
 type RecordFile = {
   path: string;
@@ -21,7 +22,12 @@ type RecordFile = {
 };
 type Review = {
   files: Map<string, File>;
-  manifest: { format: 'glass-cloud-workspace'; version: 1; files: RecordFile[] };
+  manifest: {
+    format: 'glass-cloud-workspace';
+    version: 1 | 2;
+    privateSettings?: boolean;
+    files: RecordFile[];
+  };
   version: number;
   fingerprint: string;
 };
@@ -85,13 +91,26 @@ export function NotebookMigration({
       const manifest = JSON.parse(await manifestFile.text()) as Review['manifest'];
       if (
         manifest.format !== 'glass-cloud-workspace' ||
-        manifest.version !== 1 ||
+        ![1, 2].includes(manifest.version) ||
         !Array.isArray(manifest.files) ||
         manifest.files.length < 2 ||
         manifest.files.length > 30000 ||
         new Set(manifest.files.map((file) => file.path)).size !== manifest.files.length
       )
         throw new Error(t('This folder is not a Glass cloud migration export.'));
+      const excluded = manifest.files.filter(
+        (record) =>
+          !portableNotebookPath(record.path) &&
+          !(
+            manifest.privateSettings &&
+            /^(?:\.studio\/connections\.json|\.studio\/services\/)/.test(record.path)
+          ),
+      );
+      manifest.files = manifest.files.filter((record) => !excluded.includes(record));
+      if (excluded.length)
+        setMessage(
+          `${excluded.length} generated/operational files excluded from this portable import. The original export is unchanged.`,
+        );
       const prefix = manifestFile.webkitRelativePath.slice(0, -manifestFile.name.length) + 'data/';
       const indexed = new Map(
         files
@@ -198,6 +217,17 @@ export function NotebookMigration({
               const old = confirmed.get(record.path),
                 file = review.files.get(record.path)!;
               if (old?.sha === record.sha && old.bytes === record.bytes) {
+                totals.bytes += record.bytes;
+                totals.done++;
+                setProgress({ ...totals });
+                continue;
+              }
+              const linked = await api<{ linked: boolean }>(route + '/link', {
+                signal,
+                method: 'POST',
+                body: JSON.stringify(record),
+              });
+              if (linked.linked) {
                 totals.bytes += record.bytes;
                 totals.done++;
                 setProgress({ ...totals });

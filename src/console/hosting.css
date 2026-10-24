@@ -17,6 +17,86 @@
   margin: 0 0 18px;
   font-size: 17px;
 }
+.cloud-storage {
+  grid-column: 1/-1;
+}
+.cloud-storage > progress {
+  width: 100%;
+  margin-bottom: 16px;
+}
+.storage-capacity {
+  font-size: calc(26px * var(--font-scale));
+  font-weight: 550;
+  margin-bottom: 10px;
+}
+.storage-capacity span {
+  color: var(--muted);
+  font-size: calc(15px * var(--font-scale));
+  font-weight: 400;
+}
+.storage-policy {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 16px;
+  align-items: end;
+  margin: 24px 0;
+}
+.storage-history-list {
+  list-style: none;
+  padding: 0;
+  margin: 18px 0;
+}
+.storage-history-list > li {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+.storage-history-list > li > div:first-of-type {
+  flex: 1;
+  min-width: 0;
+}
+.storage-history-list strong {
+  display: block;
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.storage-history-list small {
+  display: block;
+  margin-top: 4px;
+  font-size: calc(11px * var(--font-scale));
+  color: var(--muted);
+}
+.storage-history-path {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: calc(11px * var(--font-scale));
+  margin-top: 5px;
+}
+.cloud-backup-dialog {
+  padding: 24px;
+  max-width: min(90vw, 760px);
+}
+.cloud-backup-dialog pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: calc(12px * var(--font-scale));
+}
+@media (max-width: 640px) {
+  .storage-history-list > li {
+    flex-wrap: wrap;
+  }
+  .storage-history-list .heading-actions {
+    flex-basis: 100%;
+  }
+}
 .hosting-section h2 svg {
   color: var(--muted);
   flex-shrink: 0;
@@ -79,7 +159,7 @@
   margin-top: 20px;
   display: grid;
   gap: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--muted);
 }
 .hosting-progress progress {
@@ -91,7 +171,7 @@
 .hosting-key > label {
   display: block;
   margin-bottom: 8px;
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
   color: var(--muted);
 }
 .hosting-keys,
@@ -122,7 +202,7 @@
   display: block;
   margin-top: 4px;
   color: var(--muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale));
 }
 .hosting-jobs {
   margin-top: 20px;
@@ -212,7 +292,7 @@
   flex-wrap: wrap;
   margin: 20px 4px 0;
   color: var(--muted);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale));
 }
 .hosting-signout a {
   margin-left: auto;

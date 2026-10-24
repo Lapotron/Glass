@@ -4,6 +4,8 @@ import { Button, Icon } from '../shared/ui.js';
 import { PageHeading, ErrorBox } from './components.js';
 import { CloudOperations } from './CloudOperations.js';
 import { NotebookMigration } from './NotebookMigration.js';
+import { CloudStorage } from './CloudStorage.js';
+import { PagesSetup } from './PagesSetup.js';
 import type { CloudStatus } from '../shared/cloud-builds.js';
 import { t } from '../shared/i18n.js';
 import { formatBytes } from '../shared/media-details.js';
@@ -164,12 +166,12 @@ export function Hosting() {
           <ol className="hosting-workflow">
             <li>{t('Autosave changes only the private cloud notebook.')}</li>
             <li>{t('Publish captures an immutable release and starts Workers Builds.')}</li>
-            <li>{t('Production code pushes rebuild the last approved release.')}</li>
+            <li>{t('Git code pushes update Studio; they do not publish the public site.')}</li>
             <li>{t('Branch previews use isolated synthetic notebooks and separate storage.')}</li>
           </ol>
           <p className="help">
             {t(
-              'Backups, restoration and media optimization can wait in the build queue. A failed build leaves the last verified public release available.',
+              'Uploads, backups, restoration and ordinary saves run directly. Only Publish starts the SSG pipeline; Pages serves the generated release.',
             )}
           </p>
           <a
@@ -182,6 +184,8 @@ export function Hosting() {
             {t('Hosting guide')}
           </a>
         </section>
+        <PagesSetup />
+        <CloudStorage />
         <NotebookMigration status={status} onImported={refresh} />
         <section className="glass-panel hosting-section">
           <h2>

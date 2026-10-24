@@ -10,6 +10,7 @@ import { Store, digest } from '../src/engine/store.js';
 import { MediaService } from '../src/engine/media.js';
 import { buildSite } from '../src/engine/build.js';
 import { cameraInformation } from '../src/engine/image-details.js';
+import { cameraFromImageHeader } from '../src/cloud/image-details.js';
 import {
   prepareMediaDelivery,
   resolveMediaHtml,
@@ -140,6 +141,8 @@ it('extracts a bounded camera vocabulary while leaving serials, locations and pe
     /Private|PRIVATE|GPS|Latitude|Serial|Artist|UserComment/,
   );
   expect(await cameraInformation(Buffer.from('broken EXIF'))).toEqual({});
+  expect(cameraFromImageHeader(await cameraPicture())).toEqual(camera);
+  expect(cameraFromImageHeader(Buffer.from('broken EXIF'))).toEqual({});
 });
 it('builds referenced public metadata only, strips embedded EXIF and keeps opt-out and backup choices consistent', async () => {
   const { file, model, media } = await publishedPicture();

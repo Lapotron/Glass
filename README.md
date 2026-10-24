@@ -79,10 +79,12 @@ The [dashboard deployment guide](docs/hosted-studio.md#dashboard-only-deployment
 
 - **Studio Worker:** the private editor, authoring APIs and job coordinator, protected by Access.
 - **D1 and private R2:** the notebook manifest, content bytes, history and recovery data.
-- **Reader Worker:** the generated public website, served separately from the authoring application.
-- **Workers Builds:** compilation and other heavy work from captured notebook snapshots.
+- **Cloudflare Pages:** the public static website, generated only when you choose Publish.
+- **One Studio Workers Builds pipeline:** Git pushes update Studio; an exact Publish request runs the Node static compiler and Pages Direct Upload.
 
 Names, domains, bindings and the production branch are configurable. Git pushes update application code; Studio publication approves the notebook release. Follow the guide's setup order and preserve the encryption key when updating an existing installation.
+
+Editing, uploads, browser previews, history, backups and imports use direct private storage APIs without CI. Snapshots share immutable media blobs; portable exports leave out generated artifacts and caches. Hosting includes storage totals, retention, safe cleanup and seven-day recovery for deleted history.
 
 Local Studio also retains [Cloudflare Pages Direct Upload](docs/publishing.md). Optional ACA and the [isolated Vinext prototype](docs/dynamic-prototype.md) have their own infrastructure; Vinext is an evaluation app.
 

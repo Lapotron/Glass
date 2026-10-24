@@ -11,8 +11,8 @@ import type { Element } from 'hast';
 import { visit } from 'unist-util-visit';
 import { z } from 'zod';
 import { Store, digest, parseEntry, ConflictError } from './store.js';
-import { MediaService } from './media.js';
-import { BackupService } from './backup.js';
+import type { MediaService } from './media.js';
+import type { BackupService } from './backup.js';
 import { canonicalMediaUrl } from '../shared/media-details.js';
 import { commitFiles, fileDigest, type FileChange } from './file-transaction.js';
 import {
@@ -105,13 +105,16 @@ export type CleanupReview = {
   items: { url: string; name: string; bytes: number }[];
 };
 export class MediaMaintenance {
-  private reviews = new Map<string, CleanupReview>();
+  private reviews: Map<string, CleanupReview>;
   constructor(
     readonly store: Store,
     readonly media: MediaService,
     readonly backups: BackupService,
     readonly idle: () => boolean,
-  ) {}
+    reviews?: Map<string, CleanupReview>,
+  ) {
+    this.reviews = reviews || new Map();
+  }
   discardReviews() {
     this.reviews.clear();
   }

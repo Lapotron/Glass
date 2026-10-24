@@ -1,328 +1,97 @@
-# Cloudflare AI deployment prompt
+# Cloudflare dashboard deployment prompt
 
-Copy the complete text block into Cloudflare AI. It contains the project-specific configuration and deployment sequence, so the receiving AI does not need to browse GitHub or external documentation. This copy is prepared for a first or recreated installation. Review the domain, owner email and resource names before reusing it for another installation. Replace identifier placeholders with actual account values and enter credentials through secure fields.
+Copy the prompt below into Cloudflare’s assistant. It is self-contained; the assistant does not need internet access. Keep actual credentials in secure dashboard fields.
 
 ```text
-Help me deploy Glass through the Cloudflare dashboard using GitHub-connected Workers Builds.
+Deploy the existing Glass application from GitHub, using only your available Cloudflare account tools. Do not replace it with a starter app. If a tool is unavailable, give precise dashboard steps and mark that action pending. Never claim a deployment or verification without evidence.
 
-You cannot browse external websites or inspect GitHub directly. Use the project information below and your available Cloudflare account tools. The Cloudflare GitHub integration and build environment will retrieve the repository and dependencies.
+TARGET
+- Repository: Lapotron/Glass (or the fork I explicitly choose).
+- Production branch: main.
+- Private Studio: https://console.example.com/ . It opens at /, without /studio/.
+- Public site: https://example.com/ .
+- Sole Studio owner: admin@example.com .
+- Proposed names: Studio Worker glass-studio; private D1 glass-studio; private R2 glass-private; public Direct Upload Pages project glass-blog.
+- Inspect existing configuration first. Reuse deliberately chosen names and real IDs; never invent an account ID, database UUID, zone ID, Access AUD or team prefix.
 
-Perform supported configuration actions in the order below. If an action requires a tool you do not have, give me precise dashboard instructions and mark it as pending. Never claim that an action or verification succeeded without evidence.
+ARCHITECTURE
+There is ONE Git-connected Studio Worker pipeline. The Worker is a private platform using native D1/R2 APIs. Saving values, uploading media, browser crop/resize, previews, history, backups and imports do not start CI. Only explicit Publish captures a notebook release for Node SSG and Pages Direct Upload. The exact captured build UUID selects publication. Ordinary Git pushes build/deploy Studio only; publication does not redeploy Studio. Optional ACA setup/rollback and explicit public-CDN scans, protection changes and reviewed cleanup use captured maintenance mode; this runs no SSG and deploys neither Studio nor the site. Never create a reader Worker for a new installation. Existing reader Workers may remain as rollback infrastructure while Pages is staged.
 
-DEPLOYMENT TARGET
+DATA AND ACCESS PROTECTION
+Never delete existing Workers, D1, R2, Pages, Access applications/policies, DNS records or routes as a setup shortcut. Preserve the current public site during staging. Never import the repository’s author notebook into hosted Studio automatically; a fresh cloud notebook stays fresh until an explicit import.
+Keep the private R2 bucket completely private: no public custom domain and no r2.dev. The optional public-media CDN bucket is a different bucket. No S3 access-key pair is needed for the private binding.
+Preserve existing STUDIO_SECRET, CI_TOKEN, D1/bucket identities and Access configuration on upgrade. STUDIO_SECRET encrypts saved private settings and must never rotate as a deployment side effect. Never display credentials, service-token secrets or Deploy Hook URLs in chat or logs. Ask me to enter secrets in secure dashboard fields if needed.
 
-- GitHub repository: Lapotron/Glass
+1. PRIVATE RESOURCES
+Verify example.com is an existing zone in the selected account. Discover account ID, zone ID, D1 UUID, bucket name and Access team configuration using available tools. Create only missing, intended private Studio Worker, D1 and R2 resources. Record actual names/IDs for explicit binding selection.
+
+2. ACCESS
+Protect the entire console.example.com hostname with a self-hosted Cloudflare Access application; no /studio/ path restriction. Owner browser login allows only admin@example.com. Preserve its existing login policy. Record the app AUD and team prefix.
+Create/reuse a CI service token. Add a Service Auth policy for that exact service token across the whole hostname, alongside the owner login policy. Do not create an Access bypass rule. New machine-access policy changes require my review/confirmation before application.
+Glass also verifies Access JWT signature, issuer, audience and owner email inside the Worker. API mutations require same-origin CSRF. Do not weaken either layer.
+
+3. GITHUB BUILD CONFIGURATION
+Connect the repository to the Studio Worker only. Use:
+- Root directory: infrastructure/cloud/studio
+- Build: npm --prefix ../../.. ci && npm --prefix ../../.. run cloud:build:studio
+- Deploy: npm --prefix ../../.. run cloud:deploy:studio
 - Production branch: main
-- Private Studio URL: https://console.example.com/
-- Public website URL: https://example.com/
-- Sole Studio owner: admin@example.com
-- Installation status: first deployment / recreated Studio
+The application’s dispatcher decides whether this exact build updates Studio or publishes a captured release. Do not replace the commands with a generic wrangler deploy, and do not configure an independent glass-site pipeline for daily operations.
 
-Use these resource names unless existing configuration shows that I have deliberately chosen different names:
-
-- Studio Worker: glass-studio
-- Reader Worker: glass-site
-- D1 database: glass-studio
-- Private R2 bucket: glass-private
-
-Discover the Cloudflare account ID, example.com zone ID, workers.dev subdomain, D1 UUID, Access team prefix and Access application audience through available account tools. Ask me only for values you cannot obtain. Never invent identifiers.
-
-PROJECT ARCHITECTURE
-
-Glass already implements its application and deployment scripts. Configure and deploy that application.
-
-- Studio is a private Worker protected by Cloudflare Access.
-- Studio opens at / on its own hostname, without /studio/.
-- Studio stores notebook metadata in D1 and private notebook objects in R2.
-- The public reader is a separate Worker serving generated static pages.
-- Heavy compilation runs inside Workers Builds.
-- Saving content in Studio keeps it private.
-- Publishing in Studio approves a captured release for public deployment.
-- Git pushes rebuild application code and the last approved cloud release.
-- Repository content does not automatically initialize the hosted notebook.
-
-Keep the public reader separate from private Studio storage and credentials.
-
-Do not replace the application with a generic Worker, Next.js app, or a new template. Do not change its deployment commands.
-
-RESOURCE AND DATA PROTECTION
-
-Inspect existing resources before creating anything. Reuse the intended resources when they exist. Do not delete databases, buckets, Workers, Access applications, DNS records or existing Pages projects.
-
-Keep the private R2 bucket private: no public development URL or public custom domain.
-
-Preserve existing runtime secrets when reusing an installation, especially STUDIO_SECRET, which encrypts saved settings.
-
-Keep the current example.com deployment running until the new reader has passed staging checks.
-
-Do not display credentials, service-token secrets or Deploy Hook URLs in chat. Use secure secret-entry fields. If secure entry is unavailable, tell me exactly where to enter them.
-
-1. PREPARE RESOURCES
-
-Confirm that the example.com zone exists in the selected Cloudflare account.
-
-Create missing resources:
-- glass-studio Worker
-- glass-site Worker
-- glass-studio D1 database
-- glass-private R2 bucket
-
-Record the actual D1 UUID and bucket name. Explicitly select these resources in the build configuration below so subsequent deployments keep using them.
-
-The application binding names are fixed:
-- DB: private Studio D1 database
-- BUCKET: private Studio R2 bucket
-- ASSETS: generated static assets
-
-Do not rename those bindings.
-
-Add console.example.com as the Studio Worker's custom domain. Leave the reader on its workers.dev staging hostname initially.
-
-2. CONFIGURE CLOUDFLARE ACCESS
-
-Protect the entire console.example.com hostname, including its root, APIs, media and assets.
-
-Create or reuse a self-hosted Access application with:
-- An Allow policy for admin@example.com.
-- An available owner login method, such as email one-time PIN.
-- A separate Service Auth policy including the build service token.
-
-Create or reuse a build service token. Its Client ID and Client Secret must belong to the same token.
-
-The machine policy action must be Service Auth. An ordinary Allow policy can send build requests to an interactive login page.
-
-Record:
-- ACCESS_TEAM: only the team prefix, not the full cloudflareaccess.com URL.
-- ACCESS_AUD: this application's audience tag.
-- Service token Client ID and Client Secret, stored securely.
-
-Do not bypass Access to make builds work.
-
-3. CONFIGURE STUDIO RUNTIME SECRETS
-
-In glass-studio → Settings → Variables and Secrets, configure two independent, cryptographically random secrets, each at least 32 characters:
-
-- STUDIO_SECRET
-- CI_TOKEN
-
-These are Worker runtime secrets.
-
-Preserve their existing values if they already belong to the intended installation.
-
-The later build variable GLASS_CI_TOKEN must equal runtime CI_TOKEN. STUDIO_SECRET must remain a runtime secret and must not be included in GLASS_CI_SECRETS.
-
-4. PREPARE DEPLOYMENT PERMISSIONS
-
-Use a Cloudflare deployment API token scoped to the intended account and zone, with:
-
-Account:
-- Workers Scripts Edit
-- D1 Edit
-- Workers R2 Storage Edit
-
-For example.com:
-- Zone Read
-- DNS Edit
-- Workers Routes Edit
-
-Manual Access configuration through the dashboard does not require adding Access API permissions to this deployment token.
-
-Use a reader Deploy Hook later rather than requiring a separate Workers Builds API token.
-
-If I need to create or update the deployment token manually, give me the exact permissions and secure entry location. Do not request that I paste it into chat.
-
-5. CONFIGURE PUBLIC BUILD VARIABLES
-
-Set NODE_VERSION to 22.17.0 in the build environments. This version satisfies the repository's Node requirement.
-
-Create a plain-text build variable named GLASS_CLOUD_CONFIG containing the following JSON, replacing placeholders with actual discovered values.
-
-Use this base configuration for both pipelines:
-
+4. PUBLIC BUILD VARIABLES
+Set GLASS_CLOUD_CONFIG to a JSON object whose values are all strings. Substitute discovered values:
 {
-  "CLOUDFLARE_ACCOUNT_ID": "<account-id>",
-  "GLASS_STUDIO_WORKER": "glass-studio",
-  "GLASS_SITE_WORKER": "glass-site",
-  "GLASS_STUDIO_ORIGIN": "https://console.example.com",
-  "GLASS_SITE_ORIGIN": "https://example.com",
-  "GLASS_SITE_STAGING_ORIGIN": "https://glass-site.<workers-subdomain>.workers.dev",
-  "GLASS_D1_ID": "<actual-database-uuid>",
-  "GLASS_D1_NAME": "glass-studio",
-  "GLASS_PRIVATE_BUCKET": "glass-private",
-  "GLASS_PRODUCTION_BRANCH": "main",
-  "ACCESS_TEAM": "<team-prefix>",
-  "ACCESS_AUD": "<studio-application-audience>",
-  "ACCESS_ADMINS": "admin@example.com",
-  "GLASS_ENABLE_CUSTOM_DOMAIN": "true",
-  "GLASS_ENABLE_SITE_DOMAIN": "false"
+  "GLASS_STUDIO_WORKER":"<actual Studio Worker name>",
+  "GLASS_STUDIO_ORIGIN":"https://console.example.com",
+  "GLASS_SITE_ORIGIN":"https://example.com",
+  "GLASS_WORKSPACE_ID":"glass",
+  "GLASS_D1_ID":"<actual database UUID>",
+  "GLASS_D1_NAME":"<actual database name>",
+  "GLASS_PRIVATE_BUCKET":"<actual private bucket>",
+  "GLASS_PRODUCTION_BRANCH":"main",
+  "GLASS_ENABLE_CUSTOM_DOMAIN":"true",
+  "CLOUDFLARE_ACCOUNT_ID":"<actual account ID>",
+  "ACCESS_TEAM":"<actual Access team prefix>",
+  "ACCESS_AUD":"<actual Access application audience>",
+  "ACCESS_ADMINS":"admin@example.com",
+  "STORAGE_BUDGET_BYTES":"5368709120"
 }
+GLASS_PAGES_PROJECT is optional; the owner can choose the Pages target inside Hosting. Never put secrets in this public JSON.
 
-All values must be strings, including "true" and "false".
+5. BOOTSTRAP SECRETS
+Generate strong random STUDIO_SECRET and CI_TOKEN once for a new installation; save as runtime Worker secrets using secure tools. Keep them unchanged on upgrades. For the first Studio build, supply an encrypted GLASS_CI_SECRETS build secret with only CLOUDFLARE_API_TOKEN. The token requires account Workers Scripts Edit, D1 Edit, R2 Storage Edit and Cloudflare Pages Edit. Domain operations additionally require Zone Read, DNS Edit and Workers Routes Edit for example.com. Manual Access setup does not require Access API permissions on this token; automated private previews do.
+A deployment token does not automatically obtain extra API permissions. Glass synchronizes supported deployment connection defaults into runtime secrets; explicit saved notebook credentials take precedence. Access service secrets remain build-only.
 
-Keep credentials out of this public JSON.
+For an upgrade from the older two-pipeline version, explicitly set GLASS_PIPELINE_BOOTSTRAP=true in GLASS_CLOUD_CONFIG for the single transition build, then remove it. This skips the new coordinator endpoint until the new Studio version exists. Never use bootstrap as an automatic fallback after an authentication failure.
 
-GLASS_STUDIO_ORIGIN must be the exact HTTPS origin, without /studio/, query strings or fragments.
-
-Check for stale individual build variables that override GLASS_CLOUD_CONFIG.
-
-6. BOOTSTRAP STUDIO FIRST
-
-Connect glass-studio to Lapotron/Glass, production branch main.
-
-Use exactly:
-
-Root directory:
-infrastructure/cloud/studio
-
-Build command:
-npm --prefix ../../.. ci && npm --prefix ../../.. run cloud:build:studio
-
-Deploy command:
-npm --prefix ../../.. run cloud:deploy:studio
-
-Keep non-production branch builds disabled during bootstrap.
-
-For this FIRST deployment, create an encrypted BUILD secret named GLASS_CI_SECRETS containing ONLY:
-
+6. COMPLETE THE SAME STUDIO PIPELINE
+After Studio is reachable, set GLASS_CI_SECRETS to:
 {
-  "CLOUDFLARE_API_TOKEN": "<deployment-api-token>"
+  "CLOUDFLARE_API_TOKEN":"<scoped deployment token>",
+  "GLASS_CI_TOKEN":"<same value as runtime CI_TOKEN>",
+  "CF_ACCESS_CLIENT_ID":"<CI service token client ID>",
+  "CF_ACCESS_CLIENT_SECRET":"<matching service token secret>"
 }
+Create a private Deploy Hook on the Studio Worker’s Git build. Have me save its URL in Hosting → Pages publishing setup → Studio pipeline Deploy Hook. Do not expose it in chat. A hook avoids requiring a separate user-scoped Workers Builds API token.
 
-CURRENT BOOTSTRAP BEHAVIOR:
-The deploy script uses an available build deployment API token directly; it does not contact an unavailable coordinator first. It deploys build-supplied connection defaults as encrypted runtime secrets using a private, temporary Wrangler secrets file. The optional GLASS_CI_TOKEN maps to runtime CI_TOKEN. Never regenerate or replace STUDIO_SECRET.
+A 302 to Access login means the machine token pair or Service Auth policy is wrong. A JSON 401 at /__ci/ means the Glass bearer differs. Check the exact origin and build environment. Never follow credential-bearing redirects, disable Access or retry an uncertain publication blindly.
 
-For older releases that always contact Studio whenever GLASS_CI_TOKEN is present, use the token-only bootstrap JSON above and remove any premature standalone build GLASS_CI_TOKEN. Update the source before relying on automatic connection defaults.
+7. PAGES STAGING
+Create/reuse a separate Cloudflare Pages Direct Upload project. A Git-connected Pages project cannot accept this workflow. The owner can create/check/save the Pages target in Hosting using the same scoped connection. New hosted data starts fresh; ask before importing anything.
+Publish ONCE from Studio. The runner captures private notebook data, builds production static output using Node (including Mermaid/MathJax/Pagefind/native image processing), and runs wrangler pages deploy against the saved project. It does not deploy a public Worker and does not redeploy Studio.
+Inspect the returned Pages deployment URL and build marker at /assets/deployment.json. Verify homepage, articles, search, media, CSP/security headers, unknown-page 404 and /api/bootstrap 404. A staged release does not change the current live-release pointer. Record the actual build/deployment status and URL; queued or uploaded is not verified.
 
-Start the Studio deployment. The custom deploy script handles missing D1 migrations and Worker deployment.
+8. DOMAIN CUTOVER LAST
+Only after successful staging and my review, add example.com in Pages → Custom domains. If an old reader Worker owns that hostname, show the exact conflicting Worker domain/route and proposed DNS changes for confirmation. Keep its code/deployment for rollback; do not delete the Worker, private resources or public media bucket. Routine Publish never changes DNS or deletes routes. Verify the canonical build marker after cutover, then Publish once more to record canonical verification.
 
-Do not substitute a bare npx wrangler deploy command. The repository root wrangler.toml belongs to a separate local Pages workflow.
+UPGRADE AND STORAGE
+Disable old reader Worker automatic Git builds only after the new Studio coordinator is ready and the Studio Publish hook is saved. Git pushes update Studio only. A different Dashboard retry UUID must not claim a queued Publish; cancel the unclaimed request in Hosting and start the intended action again.
+Hosting → Storage and history exposes logical categories, physical reservations, recent artifact retention, shared-cache limits, history deletion/recovery and safe cleanup. Defaults keep the latest three successful downloadable artifacts plus active/approved/live releases, and 128 MiB/seven-day shared cache. Deleted history/backups recover for seven days. Never automatically delete author media, originals or history. Shared blobs stay protected by any live reference.
 
-After deployment, have me:
-- Open https://console.example.com/
-- Sign in as admin@example.com.
-- Confirm that the Studio interface loads.
-- Verify Studio → Site settings → Credentials reports its Cloudflare token as provided by the deployment; a second token entry is not needed. Explicit saved Studio credentials override defaults for Studio operations.
+For migration, the owner exports:
+npm run cloud:export -- --root /absolute/notebook --out /new/export-folder
+Default version-2 exports include content/media/originals/history/Trash, deduplicate payloads by checksum, and exclude generated builds/caches/jobs/archives/machine state. Hosting reads version-1 folders too. Review and import explicitly; transfers resume with checksums for seven idle days, then activate atomically. Preserve omitted private settings and a visible safety snapshot. Never declare migration complete without reading restored content and exact media bytes.
 
-Do not move to the complete CI configuration until these steps are finished.
-
-7. ENABLE NORMAL CI AND THE READER PIPELINE
-
-After Studio works, replace the Studio's bootstrap GLASS_CI_SECRETS with:
-
-{
-  "CLOUDFLARE_API_TOKEN": "<deployment-api-token>",
-  "GLASS_CI_TOKEN": "<exact-runtime-CI_TOKEN-value>",
-  "CF_ACCESS_CLIENT_ID": "<service-token-client-id>",
-  "CF_ACCESS_CLIENT_SECRET": "<matching-service-token-client-secret>"
-}
-
-Configure the reader with the same complete build secrets and base public configuration.
-
-Connect glass-site to Lapotron/Glass, production branch main.
-
-Use exactly:
-
-Root directory:
-infrastructure/cloud/site
-
-Build command:
-npm --prefix ../../.. ci && npm --prefix ../../.. run cloud:build:site
-
-Deploy command:
-npm --prefix ../../.. run cloud:deploy:site
-
-Create a production-branch Deploy Hook under the reader Worker's Builds settings.
-
-Have me securely save that hook URL in:
-Studio → Site settings → Credentials → Workers Builds Deploy Hook
-
-The Studio runtime secret BUILDS_DEPLOY_HOOK is an alternative when managing the hook directly through runtime secrets. Do not expose the hook URL.
-
-The first automatic reader build may stop because no approved release exists. Do not repeatedly retry it. The next step creates the required approval.
-
-8. CREATE THE FIRST APPROVED RELEASE
-
-Have me import my portable notebook through:
-Studio → Backups → Import a notebook
-
-Alternatively, I can configure fresh content in Studio.
-
-Do not assume Git repository content has been imported.
-
-Verify that:
-- The notebook's canonical site URL is https://example.com.
-- Its configured account matches the deployment account.
-- Referenced media exists.
-- Any unused starter portrait reference is cleared.
-
-Have me click Build & Publish in Studio.
-
-Keep GLASS_ENABLE_SITE_DOMAIN set to "false". This first publication must target the configured workers.dev staging origin.
-
-Verify, or ask me to verify in a browser if your tools cannot access URLs:
-- Homepage loads.
-- An article loads.
-- Images load.
-- Search works.
-- The deployed release marker matches the build.
-- Studio APIs are unavailable on the public reader.
-- Private Studio remains protected by Access.
-
-A successful build or uploaded artifact alone is not proof of a working public deployment.
-
-9. ENABLE THE PUBLIC DOMAIN
-
-Only after staging checks pass, change GLASS_ENABLE_SITE_DOMAIN to "true" in the READER build configuration, then publish a new approved release from Studio.
-
-First inspect whether example.com is already served by Pages or another deployment.
-
-If preserving an existing Pages site:
-- Add GLASS_SITE_ZONE_ID with the actual example.com zone ID.
-- The project uses the exact example.com/* Worker route.
-- Preserve existing Pages DNS and the Pages project as fallback.
-- Do not overwrite a conflicting Worker route.
-
-If no existing product owns the hostname's DNS:
-- The generated configuration can use a Worker Custom Domain without GLASS_SITE_ZONE_ID.
-
-Verify the public URL and matching release marker before retiring any previous deployment.
-
-10. TROUBLESHOOTING AND COMPLETION
-
-If compilation succeeds but deployment fails:
-- Separate the build result from the deploy result.
-- Read the complete error after triggerUncaughtException.
-- Large compiler chunks and Lucide "use client" warnings do not explain an Access redirect.
-
-If CI reaches an Access login redirect:
-- On older releases, bootstrap with token-only secrets. Current code uses the provided deployment token directly.
-- During normal updates, check the Access service-token pair, expiration and Service Auth policy.
-- Check the exact Studio origin.
-- Never enable redirect following or forward credentials to a login page.
-
-If Studio returns "Build authentication required":
-- Check build GLASS_CI_TOKEN against runtime CI_TOKEN.
-
-If Studio says to save the deployment token:
-- Redeploy current source with the deployment token available in Builds, or explicitly save a Studio override. Automatic synchronization cannot grant missing token permissions.
-
-If the reader says no approved release exists:
-- Publish from Studio; a dashboard retry cannot create approval.
-
-Keep branch previews disabled until production works. If enabled later, use:
-- Studio: npm --prefix ../../.. run cloud:preview:studio
-- Reader: npm --prefix ../../.. run cloud:preview:site
-
-Studio previews require extra Access application/policy permissions and isolated resources. Never bind preview Studio to production notebook storage.
-
-Finish with a concise status report listing:
-- Actual resource names and identifiers.
-- Studio and reader addresses.
-- Build roots, commands and production branch.
-- Bootstrap or normal-CI credential mode.
-- Successful deployment IDs or source commits, when available.
-- Checks actually completed.
-- Remaining manual steps and exact errors.
-
-If your tools cannot make external HTTP requests, mark browser verification as pending and give me the exact checks. Do not fabricate successful URL tests.
+FINAL REPORT
+List completed vs pending actions, actual resource names/IDs, Studio URL, Pages staging URL, canonical status, exact build result and remaining secure-entry/dashboard steps. Do not print secrets. Do not describe configuration as a verified deployment.
 ```

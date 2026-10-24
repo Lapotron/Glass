@@ -5,7 +5,7 @@ import { BackupImport } from './BackupImport.js';
 import { useEffect, useState } from 'react';
 import { Button, Icon } from '../shared/ui.js';
 import type { BackupRecord, RestoreReview } from '../engine/backup.js';
-import { api, send } from './api.js';
+import { api, send, isCloudStudio, workspacePreferenceKey } from './api.js';
 import { formatBytes } from '../shared/media-details.js';
 import { Modal, Field, PageHeading, ErrorBox } from './components.js';
 export function Backups({ onRestored }: { onRestored: () => Promise<void> }) {
@@ -35,6 +35,7 @@ export function Backups({ onRestored }: { onRestored: () => Promise<void> }) {
       const record = await send<BackupRecord>('backups', 'POST', { format });
       await refresh();
       setMessage('A portable backup is ready. Download it below.');
+      if (isCloudStudio()) return;
       const link = document.createElement('a');
       link.href = `/api/backups/${record.id}/download`;
       link.download = '';
@@ -74,6 +75,7 @@ export function Backups({ onRestored }: { onRestored: () => Promise<void> }) {
       setConfirm(false);
       setReview(null);
       await onRestored();
+      if (isCloudStudio()) localStorage.removeItem(workspacePreferenceKey('native-backup-import'));
       await refresh();
       setMessage(
         `Notebook restored. The previous notebook is saved as safety backup ${result.safetyBackup}.`,
@@ -93,27 +95,29 @@ export function Backups({ onRestored }: { onRestored: () => Promise<void> }) {
         title={t('Your notebook, kept safe.')}
         description={t('Portable backups of your writing, media, settings, revisions, and Trash.')}
       >
-        <Field label={t('Archive format')}>
-          <select
-            value={format}
-            disabled={busy}
-            onChange={(event) => setFormat(event.target.value as 'large' | 'legacy')}
-          >
-            <option value="large" data-ui="Large notebook (.tar.gz)">
-              {t('Large notebook (.tar.gz)')}
-            </option>
-            <option value="legacy" data-ui="Compatibility (.json.gz)">
-              {t('Compatibility (.json.gz)')}
-            </option>
-          </select>
-        </Field>
+        {!isCloudStudio() && (
+          <Field label={t('Archive format')}>
+            <select
+              value={format}
+              disabled={busy}
+              onChange={(event) => setFormat(event.target.value as 'large' | 'legacy')}
+            >
+              <option value="large" data-ui="Large notebook (.tar.gz)">
+                {t('Large notebook (.tar.gz)')}
+              </option>
+              <option value="legacy" data-ui="Compatibility (.json.gz)">
+                {t('Compatibility (.json.gz)')}
+              </option>
+            </select>
+          </Field>
+        )}
         <Button
           variant="primary"
           icon={busy ? 'LoaderCircle' : 'Download'}
           disabled={busy}
           onClick={() => void create()}
         >
-          <UiText message={'Create & download backup'} />
+          {isCloudStudio() ? t('Create backup') : <UiText message={'Create & download backup'} />}
         </Button>
       </PageHeading>
       <ErrorBox error={error} />

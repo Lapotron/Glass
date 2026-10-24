@@ -4,8 +4,14 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { createHash, randomBytes } from 'node:crypto';
-import { createLargeBackup, indexBackupFiles } from '../src/engine/backup-archive.js';
+import { gzipSync } from 'node:zlib';
+import {
+  createLargeBackup,
+  indexBackupFiles,
+  extractLargeBackup,
+} from '../src/engine/backup-archive.js';
 import { cloudExportFilePath } from '../src/shared/cloud-migration.js';
+import { portableNotebookPath, archiveNotebookPath } from '../src/shared/notebook-data.js';
 test.beforeEach(async ({ request }) => {
   // A settings screen can leave a captured read job finishing after its tab closes.
   // Keep the shared fixture idle before the next test starts a heavy operation.
@@ -28,6 +34,47 @@ async function mutate(request: APIRequestContext, path: string, method: string, 
   });
   expect(result.ok(), await result.text()).toBe(true);
   return result.json();
+}
+async function preparedFixture(request: APIRequestContext, name: string, png: Buffer) {
+  const output = await fs.readFile('tests/fixtures/cloud-portrait.webp'),
+    checksum = (value: Buffer) => createHash('sha256').update(value).digest('hex');
+  const session = await mutate(request, 'media/uploads', 'POST', {
+    filename: name,
+    original: { bytes: png.length, sha: checksum(png) },
+    output: { bytes: output.length, sha: checksum(output) },
+    width: 192,
+    height: 192,
+  });
+  for (const [role, bytes] of [
+    ['original', png],
+    ['output', output],
+  ] as const) {
+    const transfer = await mutate(request, 'media/uploads/' + session.id + '/transfer', 'POST', {
+      role,
+    });
+    if (transfer.reused) continue;
+    const state = await (await request.get('/api/bootstrap')).json();
+    const part = await request.put(
+      '/api/media/uploads/' + session.id + '/transfers/' + transfer.id + '/parts/1',
+      {
+        headers: {
+          Origin: 'http://127.0.0.1:4398',
+          'X-Studio-Token': state.token,
+          'X-Part-SHA256': checksum(bytes),
+          'Content-Type': 'application/octet-stream',
+        },
+        data: bytes,
+      },
+    );
+    expect(part.ok(), await part.text()).toBe(true);
+    await mutate(
+      request,
+      'media/uploads/' + session.id + '/transfers/' + transfer.id + '/complete',
+      'POST',
+      {},
+    );
+  }
+  return mutate(request, 'media/uploads/' + session.id + '/commit', 'POST', {});
 }
 test('hosted Studio opens at root and redirects legacy bookmarks without losing their section', async ({
   page,
@@ -70,23 +117,32 @@ test('hosted Studio opens at root and redirects legacy bookmarks without losing 
   const external = await request.get('/studio//external.test', { maxRedirects: 0 });
   expect(external.headers().location).toBe('/external.test');
 });
-test('credential checks report missing R2 setup without starting a build', async ({ page, request }) => {
+test('credential checks report missing R2 setup without starting a build', async ({
+  page,
+  request,
+}) => {
   const before = await (await request.get('/api/cloud/status')).json();
   const polls: string[] = [];
   page.on('request', (request) => {
     if (new URL(request.url()).pathname.startsWith('/api/cloud-jobs/')) polls.push(request.url());
   });
   await page.goto('/#settings/connections');
-  const response = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/connections/test');
+  const response = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === '/api/connections/test',
+  );
   await page.getByRole('button', { name: 'Test saved R2 connection', exact: true }).click();
   const result = await response;
   expect(result.status()).toBe(400);
   expect(await result.json()).toMatchObject({ error: expect.stringContaining('R2 needs:') });
   await expect(page.getByRole('alert').filter({ hasText: 'R2 needs:' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Test saved R2 connection', exact: true })).toBeEnabled();
+  await expect(
+    page.getByRole('button', { name: 'Test saved R2 connection', exact: true }),
+  ).toBeEnabled();
   expect(polls).toEqual([]);
   const after = await (await request.get('/api/cloud/status')).json();
-  expect(after.jobs.map((job: { id: string }) => job.id)).toEqual(before.jobs.map((job: { id: string }) => job.id));
+  expect(after.jobs.map((job: { id: string }) => job.id)).toEqual(
+    before.jobs.map((job: { id: string }) => job.id),
+  );
 });
 test('Projects preview stays inside its card and scrolls independently in hosted Studio', async ({
   page,
@@ -221,22 +277,14 @@ test('homepage and About previews load an unpublished private portrait without b
   page,
   request,
 }) => {
-  const initial = await (await request.get('/api/bootstrap')).json();
-  const upload = await request.post('/api/media', {
-    headers: { Origin: 'http://127.0.0.1:4398', 'X-Studio-Token': initial.token },
-    multipart: {
-      file: {
-        name: 'private-preview-portrait.png',
-        mimeType: 'image/png',
-        buffer: Buffer.from(
-          'iVBORw0KGgoAAAANSUhEUgAAAMAAAADAAQMAAABoEv5EAAAAA1BMVEVGcowqahjXAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHElEQVRYw+3BMQEAAADCoPVPbQ0PoAAAAADg1wASwAABCP6fUgAAAABJRU5ErkJggg==',
-          'base64',
-        ),
-      },
-    },
-  });
-  expect(upload.ok(), await upload.text()).toBe(true);
-  const portrait = await operationResult(request, await upload.json());
+  const portrait = await preparedFixture(
+    request,
+    'private-preview-portrait.png',
+    Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAMAAAADAAQMAAABoEv5EAAAAA1BMVEVGcowqahjXAAAACXBIWXMAAAPoAAAD6AG1e1JrAAAAHElEQVRYw+3BMQEAAADCoPVPbQ0PoAAAAADg1wASwAABCP6fUgAAAABJRU5ErkJggg==',
+      'base64',
+    ),
+  );
   const current = await (await request.get('/api/bootstrap')).json();
   await mutate(request, 'site', 'PUT', {
     value: {
@@ -257,7 +305,7 @@ test('homepage and About previews load an unpublished private portrait without b
   const aboutImage = page.frameLocator('iframe[title="About preview"]').locator('.about-portrait');
   await expect(aboutImage).toHaveJSProperty('naturalWidth', 192, { timeout: 60000 });
 });
-test('hosted media file picker prepares an image and uploads both images and PDF attachments through CI', async ({
+test('hosted media file picker prepares images and PDF attachments directly without CI', async ({
   page,
   request,
 }) => {
@@ -277,15 +325,10 @@ test('hosted media file picker prepares an image and uploads both images and PDF
   const apply = image.getByRole('button', { name: 'Apply & upload', exact: true });
   await expect(apply).toBeEnabled({ timeout: 60000 });
   await apply.click();
-  await expect(image.getByRole('status', { name: 'Cloud operation', exact: true })).toBeVisible();
-  await expect(image.getByRole('link', { name: 'Cloud operations', exact: true })).toHaveAttribute(
-    'href',
-    '#hosting',
-  );
   await expect(image).not.toBeVisible({ timeout: 90000 });
   const files = await (await request.get('/api/media')).json();
   const uploaded = files.find(
-    (file: any) => file.name.startsWith(name) && file.name.endsWith('.webp'),
+    (file: any) => file.name.startsWith(name) && /\.(?:webp|png)$/.test(file.name),
   );
   expect(uploaded).toMatchObject({ width: 192, height: 192 });
   expect((await request.get(uploaded.url)).ok()).toBe(true);
@@ -302,33 +345,99 @@ test('hosted media file picker prepares an image and uploads both images and PDF
   expect(uploadedPdf).toBeTruthy();
   expect(await (await request.get(uploadedPdf.url)).body()).toEqual(pdf);
 });
-test('hosting shows private storage and a queued backup completes through the cloud CI bridge', async ({
+test('hosting creates and downloads an immutable snapshot without a CI job or a stored archive', async ({
   page,
   request,
 }) => {
-  await page.goto('/');
-  await page.getByRole('button', { name: 'Hosting', exact: true }).click();
-  await expect(page.getByRole('heading', { name: 'Hosting', exact: true })).toBeVisible();
-  await expect(page.getByText('isolated-cloud-test', { exact: true })).toBeVisible();
-  const response = await mutate(request, 'backups', 'POST', {});
-  expect(response.cloudJob).toBeTruthy();
+  await page.addInitScript(() =>
+    Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: undefined }),
+  );
+  const before = await (await request.get('/api/cloud/status')).json();
+  await page.goto('/#hosting');
+  await expect(
+    page.getByRole('heading', { name: 'Storage and history', exact: true }),
+  ).toBeVisible();
+  const snapshot = await mutate(request, 'backups', 'POST', {});
+  expect(snapshot.snapshot).toBe(true);
+  expect(snapshot.cloudJob).toBeUndefined();
+  const after = await (await request.get('/api/cloud/status')).json();
+  expect(after.jobs).toEqual(before.jobs);
+  expect(after.files).toBe(before.files);
+  await page.goto('/#backups');
+  const row = page.locator('.backup-list article').filter({ hasText: snapshot.name });
+  await expect(row).toBeVisible();
+  await row.getByRole('link', { name: 'Download', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Export notebook', exact: true });
+  await expect(dialog).toBeVisible();
+  const link = dialog.getByRole('link', { name: /Download archive/ });
+  await expect(link).toBeVisible({ timeout: 60000 });
+  const download = page.waitForEvent('download');
+  await link.click();
+  const result = await download;
+  const folder = await fs.mkdtemp(path.join(os.tmpdir(), 'glass-native-download-'));
+  try {
+    const archive = path.join(folder, 'notebook.tar.gz');
+    await result.saveAs(archive);
+    const manifest = await extractLargeBackup(archive, path.join(folder, 'unpacked'));
+    expect(manifest.files.some((file) => file.path === 'content/site.json')).toBe(true);
+    expect(manifest.files.some((file) => file.path.includes('builds/'))).toBe(false);
+  } finally {
+    await fs.rm(folder, { recursive: true, force: true });
+  }
+  await dialog.getByRole('button', { name: 'Close', exact: true }).click();
+});
+test('hosting history supports reviewed batch deletion, recovery and narrow glass controls without CI', async ({
+  page,
+  request,
+}) => {
+  const before = await (await request.get('/api/cloud/status')).json();
+  let entry = await mutate(request, 'content', 'POST', {
+    kind: 'posts',
+    title: 'History operations ' + test.info().project.name,
+    slug: 'native-history-' + test.info().project.name,
+  });
+  for (let index = 0; index < 7; index++)
+    entry = await mutate(request, 'content/' + entry.id, 'PUT', {
+      metadata: entry,
+      body: 'Revision ' + index,
+      revision: entry.revision,
+    });
+  await page.goto('/#hosting');
+  const section = page.locator('.cloud-storage');
+  await section.getByRole('button', { name: 'History', exact: true }).click();
+  await section
+    .getByRole('searchbox', { name: 'Search history', exact: true })
+    .fill('/' + entry.id + '/');
+  await expect(section.locator('.storage-history-list>li')).toHaveCount(7);
+  await section.getByRole('button', { name: 'Select this page', exact: true }).click();
+  await section.getByRole('button', { name: 'Delete selected (7)', exact: true }).click();
+  const review = page.getByRole('dialog', { name: 'Delete selected history', exact: true });
+  await expect(review).toBeVisible();
+  await review.getByRole('button', { name: 'Delete selected', exact: true }).click();
+  await expect(review).not.toBeVisible();
+  await expect(
+    section.getByText('No history matches these filters.', { exact: true }),
+  ).toBeVisible();
+  await section.getByRole('button', { name: 'Recovery', exact: true }).click();
+  const item = section.locator('.storage-history-list>li').filter({ hasText: entry.id }).first();
+  await expect(item).toBeVisible();
+  await item.getByRole('button', { name: 'Restore', exact: true }).click();
+  await expect(section.getByText('History restored.', { exact: true })).toBeVisible();
+  const restored = await (
+    await request.get('/api/history?' + new URLSearchParams({ q: '/' + entry.id + '/' }))
+  ).json();
+  expect(restored.items).toHaveLength(1);
+  expect((await (await request.get('/api/cloud/status')).json()).jobs).toEqual(before.jobs);
+  await page.setViewportSize({ width: 1280, height: 1000 });
+  await section.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: test.info().outputPath('storage-desktop.png') });
+  await page.getByRole('button', { name: 'Toggle Studio appearance', exact: true }).click();
+  await page.setViewportSize({ width: 320, height: 900 });
   await expect
-    .poll(
-      async () => {
-        const row = await (await request.get('/api/cloud-jobs/' + response.cloudJob)).json();
-        if (row.state === 'failed') throw new Error(row.error);
-        return row.state;
-      },
-      { timeout: 90000 },
-    )
-    .toBe('succeeded');
-  const backups = await (await request.get('/api/backups')).json();
-  expect(backups.length).toBeGreaterThan(0);
-  const archive = await request.get('/api/backups/' + backups[0].id + '/download');
-  expect(archive.ok()).toBe(true);
-  expect(archive.headers()['content-type']).toContain('gzip');
-  const row = page.locator('.hosting-jobs li').filter({ hasText: '/api/backups' }).first();
-  await expect(row).toContainText('Complete', { timeout: 15000 });
+    .poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1))
+    .toBe(true);
+  await section.scrollIntoViewIfNeeded();
+  await page.screenshot({ path: test.info().outputPath('storage-dark-mobile.png') });
 });
 test('hosted media audits distinguish a renamed revision from current missing references', async ({
   page,
@@ -400,9 +509,103 @@ async function operationResult(request: APIRequestContext, queued: any) {
   expect(result.status).toBeLessThan(400);
   return result.body;
 }
-test('captured backup restoration and reset recovery retain their reviewed source and private download', async ({
+test('old saved JSON archives can be reviewed by the browser worker without CI', async ({
+  page,
   request,
 }) => {
+  const headers = { Authorization: 'Bearer fixture-ci-only-not-production-123456789' },
+    original = await (await request.get('/__ci/workspace', { headers })).json(),
+    before = await (await request.get('/api/cloud/status')).json();
+  const bootstrap = await (await request.get('/api/bootstrap')).json(),
+    payloads = new Map<string, Buffer>(),
+    archiveFiles = [];
+  for (const file of original.files.filter((file: any) => portableNotebookPath(file.path))) {
+    const value = await (
+      await request.get('/__ci/workspace/file?' + new URLSearchParams({ path: file.path }), {
+        headers,
+      })
+    ).body();
+    payloads.set(file.path, value);
+    archiveFiles.push({
+      path: archiveNotebookPath(file.path),
+      sha256: createHash('sha256').update(value).digest('hex'),
+      data: value.toString('base64'),
+    });
+  }
+  const createdAt = new Date().toISOString(),
+    id = Date.now() + '-' + randomBytes(4).toString('hex'),
+    name = 'Legacy browser compatibility.json.gz',
+    archive = gzipSync(
+      JSON.stringify({ format: 'fieldnotes-notebook', version: 2, createdAt, files: archiveFiles }),
+    );
+  const record = Buffer.from(
+    JSON.stringify({
+      id,
+      name,
+      createdAt,
+      reason: 'manual',
+      files: archiveFiles.length,
+      entries: bootstrap.entries.length,
+      media: archiveFiles.filter((file) => file.path.startsWith('content/media/')).length,
+      revisions: 0,
+      bytes: archive.length,
+      label: 'Legacy archive check',
+    }),
+  );
+  const session = await mutate(request, 'cloud/migration', 'POST', { version: before.version }),
+    manifest = [...original.files];
+  for (const file of original.files) {
+    const link = await mutate(request, 'cloud/migration/' + session.id + '/link', 'POST', file);
+    if (!link.linked) {
+      const value =
+        payloads.get(file.path) ||
+        (await (
+          await request.get('/__ci/workspace/file?' + new URLSearchParams({ path: file.path }), {
+            headers,
+          })
+        ).body());
+      await request.put(
+        '/api/cloud/migration/' + session.id + '/file?' + new URLSearchParams({ path: file.path }),
+        {
+          headers: { Origin: 'http://127.0.0.1:4398', 'X-Studio-Token': bootstrap.token },
+          data: value,
+        },
+      );
+    }
+  }
+  for (const [path, value] of [
+    ['.studio/backups/' + id + '.json', record],
+    ['.studio/backups/' + id + '.json.gz', archive],
+  ] as const) {
+    const response = await request.put(
+      '/api/cloud/migration/' + session.id + '/file?' + new URLSearchParams({ path }),
+      {
+        headers: { Origin: 'http://127.0.0.1:4398', 'X-Studio-Token': bootstrap.token },
+        data: value,
+      },
+    );
+    expect(response.ok(), await response.text()).toBe(true);
+    manifest.push(await response.json());
+  }
+  await mutate(request, 'cloud/migration/' + session.id + '/commit', 'POST', { files: manifest });
+  await page.goto('/#backups');
+  await page
+    .locator('.backup-list article')
+    .filter({ hasText: 'Legacy archive check' })
+    .getByRole('button', { name: 'Review', exact: true })
+    .click();
+  await expect(page.getByText('Checksums verified', { exact: true })).toBeVisible({
+    timeout: 60000,
+  });
+  expect((await (await request.get('/api/cloud/status')).json()).jobs).toEqual(before.jobs);
+});
+test('captured backup restoration and reset recovery retain their reviewed source and private download', async ({
+  page,
+  request,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(window, 'showSaveFilePicker', { configurable: true, value: undefined }),
+  );
   const initial = await (await request.get('/api/bootstrap')).json();
   // The empty-cloud fixture has no portrait asset; recovery must preserve a valid settings snapshot.
   const cleared = { ...initial.site, profile: { ...initial.site.profile, portrait: '' } };
@@ -420,10 +623,9 @@ test('captured backup restoration and reset recovery retain their reviewed sourc
   const restored = await (await request.get('/api/content')).json();
   expect(restored.some((entry: any) => entry.id === temporary.id)).toBe(false);
   const review = await operation(request, 'notebook/reset/review');
-  expect(review.backupUrl).toMatch(/^\/api\/cloud-jobs\//);
-  const recovery = await request.get(review.backupUrl);
-  expect(recovery.ok()).toBe(true);
-  expect(recovery.headers()['content-type']).toContain('gzip');
+  expect(review.backupUrl).toMatch(/^\/api\/backups\//);
+  const recoveryId = review.backupUrl.split('/')[3];
+  expect((await request.get('/api/backups/' + recoveryId + '/manifest')).ok()).toBe(true);
   await operation(request, 'notebook/reset/' + review.id + '/commit', {
     sourceRevision: review.sourceRevision,
     confirmation: 'RESET',
@@ -433,6 +635,21 @@ test('captured backup restoration and reset recovery retain their reviewed sourc
   expect(blank.site.name).toBe(initial.site.name);
   const resets = await operation(request, 'notebook/reset', undefined, 'GET');
   expect(resets.recoveries.length).toBeGreaterThan(0);
+  await page.goto('/#settings/reset');
+  await page.getByRole('link', { name: 'Download the recovery copy', exact: true }).click();
+  const download = page.getByRole('dialog', { name: 'Export notebook', exact: true });
+  await expect(download.getByRole('link', { name: /Download archive/ })).toBeVisible({
+    timeout: 60000,
+  });
+  await download.getByRole('button', { name: 'Close', exact: true }).click();
+  await page.getByRole('button', { name: 'Review data reset', exact: true }).click();
+  const reset = page.getByRole('dialog', { name: 'Reset notebook data?', exact: true });
+  await reset.getByRole('link', { name: /Download recovery copy/ }).click();
+  await expect(download.getByRole('link', { name: /Download archive/ })).toBeVisible({
+    timeout: 60000,
+  });
+  await download.getByRole('button', { name: 'Close', exact: true }).click();
+  await reset.getByRole('button', { name: 'Cancel', exact: true }).click();
 });
 
 test('Hosting imports a large media file through private multipart R2 and verifies the resulting bytes', async ({

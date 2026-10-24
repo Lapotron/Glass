@@ -42,7 +42,7 @@ export function BackupAutomation({ onChanged }: { onChanged: () => Promise<void>
       <p className="help">
         {isCloudStudio()
           ? t(
-              'Cloudflare checks daily backups even when your browser is closed. Work runs through the private build queue.',
+              'Cloudflare creates daily snapshots directly in private storage. Unchanged media is shared; no build is started.',
             )
           : t(
               'Runs once every 24 hours while Studio is open. Overdue backups run after Studio starts. Manual and safety backups are kept until you delete them.',
@@ -271,9 +271,11 @@ export function BackupCatalog({
                   {item.available === false && ' · Archive missing'}
                 </small>
                 <small>
-                  {item.archiveFormat === 'tar'
-                    ? t('Large archive · v3')
-                    : t('Compatibility archive · v1/v2')}
+                  {(item as BackupRecord & { snapshot?: boolean }).snapshot
+                    ? t('Reference snapshot · Download as v3')
+                    : item.archiveFormat === 'tar'
+                      ? t('Large archive · v3')
+                      : t('Compatibility archive · v1/v2')}
                   {item.unpackedBytes !== undefined &&
                     ' · ' + size(item.unpackedBytes) + ' ' + t('unpacked')}
                 </small>
@@ -283,6 +285,16 @@ export function BackupCatalog({
                   className="button secondary small"
                   href={'/api/backups/' + item.id + '/download'}
                   download
+                  onClick={
+                    isCloudStudio() && (item as BackupRecord & { snapshot?: boolean }).snapshot
+                      ? (event) => {
+                          event.preventDefault();
+                          void import('./cloud-backup.js')
+                            .then((module) => module.downloadCloudBackup(item.id))
+                            .catch((error) => setError(error.message));
+                        }
+                      : undefined
+                  }
                 >
                   <Icon name="Download" size={14} />
                   <UiText message={'Download'} />
@@ -305,12 +317,20 @@ export function BackupCatalog({
         <BatchDialog
           title={
             action === 'delete'
-              ? t('Delete selected backups permanently?')
+              ? isCloudStudio()
+                ? t('Delete selected backups?')
+                : t('Delete selected backups permanently?')
               : t('Rename backup label')
           }
           names={names}
           destructive={action === 'delete'}
-          confirmLabel={action === 'delete' ? 'Delete backups permanently' : 'Save label'}
+          confirmLabel={
+            action === 'delete'
+              ? isCloudStudio()
+                ? 'Delete backups'
+                : 'Delete backups permanently'
+              : 'Save label'
+          }
           onClose={() => setAction('')}
           onConfirm={async () => {
             await send('backups/batch', 'POST', {
@@ -324,7 +344,11 @@ export function BackupCatalog({
         >
           {action === 'delete' ? (
             <p className="help">
-              {t('These saved archives will be removed from private notebook storage.')}
+              {isCloudStudio()
+                ? t(
+                    'Selected backup references move to seven-day recovery. Shared blobs remain protected until no retained copy needs them.',
+                  )
+                : t('These saved archives will be removed from private notebook storage.')}
               {(selection.count === items.length ||
                 (items.some((item) => item.available !== false) &&
                   items

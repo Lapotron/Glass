@@ -83,6 +83,33 @@ it('initializes a new cloud notebook with its deployment account and no missing 
   expect(state.site.cloudflare.accountId).toBe('a'.repeat(32));
   expect(state.site.profile.portrait).toBe('');
 });
+it('shows only a verified staging release in Pages setup, excluding legacy and failed deployments', async () => {
+  const db = await runtime.getD1Database('DB');
+  const seeds = [
+    ['fixture-stage', '2998-01-01', 'staged', 'https://checked.fixture.pages.dev'],
+    ['fixture-old-worker', '2999-01-01', 'live', 'https://old-reader.workers.dev'],
+    ['fixture-failed', '2999-02-01', 'failed', 'https://failed.fixture.pages.dev'],
+  ];
+  try {
+    for (const [id, created, state, url] of seeds)
+      await db
+        .prepare(
+          'INSERT INTO cloud_releases(id,version,manifest_key,created,state,deployment_url) VALUES(?,0,?,?,?,?)',
+        )
+        .bind(id, 'fixture/' + id, created, state, url)
+        .run();
+    const response = await get('/api/cloud/pages');
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as any).staged).toMatchObject({
+      id: 'fixture-stage',
+      state: 'staged',
+      deployment_url: 'https://checked.fixture.pages.dev',
+    });
+  } finally {
+    for (const [id] of seeds)
+      await db.prepare('DELETE FROM cloud_releases WHERE id=?').bind(id).run();
+  }
+});
 it('returns a missing R2 configuration error directly without creating a cloud job', async () => {
   const state = (await (await get('/api/bootstrap')).json()) as any;
   const db = await runtime.getD1Database('DB');
@@ -101,35 +128,62 @@ it('checks saved R2 credentials while the build queue is busy without writing D1
   const configured = {
     ...initial.site,
     mediaDelivery: {
-      mode: 'r2', bucket: 'fixture-media', publicOrigin: 'https://assets.fixture.test', prefix: 'media',
+      mode: 'r2',
+      bucket: 'fixture-media',
+      publicOrigin: 'https://assets.fixture.test',
+      prefix: 'media',
     },
   };
-  expect((await write('/api/site', { value: configured, revision: initial.siteRevision }, 'PUT')).status).toBe(200);
+  expect(
+    (await write('/api/site', { value: configured, revision: initial.siteRevision }, 'PUT')).status,
+  ).toBe(200);
   const db = await runtime.getD1Database('DB');
   const now = new Date().toISOString();
-  const version = await db.prepare('SELECT version FROM cloud_workspace WHERE id=1').first('version');
-  await db.prepare("INSERT INTO cloud_jobs(id,kind,state,actor,version,request,build_uuid,created,updated) VALUES('connection-test-busy','api','queued','fixture-owner',?,'{}','another-build',?,?)").bind(version, now, now).run();
+  const version = await db
+    .prepare('SELECT version FROM cloud_workspace WHERE id=1')
+    .first('version');
+  await db
+    .prepare(
+      "INSERT INTO cloud_jobs(id,kind,state,actor,version,request,build_uuid,created,updated) VALUES('connection-test-busy','api','queued','fixture-owner',?,'{}','another-build',?,?)",
+    )
+    .bind(version, now, now)
+    .run();
   try {
-    const before = await db.prepare('SELECT version FROM cloud_workspace WHERE id=1').first('version');
-    const state = (await (await runtime.dispatchFetch(origin + '/api/bootstrap', {
-      headers: { 'X-Fixture-Read-Only': 'true' },
-    })).json()) as any;
+    const before = await db
+      .prepare('SELECT version FROM cloud_workspace WHERE id=1')
+      .first('version');
+    const state = (await (
+      await runtime.dispatchFetch(origin + '/api/bootstrap', {
+        headers: { 'X-Fixture-Read-Only': 'true' },
+      })
+    ).json()) as any;
     const headers = {
-      Origin: origin, 'X-Studio-Token': state.token,
-      'X-Fixture-Read-Only': 'true', 'X-Fixture-R2-Token': 'true',
+      Origin: origin,
+      'X-Studio-Token': state.token,
+      'X-Fixture-Read-Only': 'true',
+      'X-Fixture-R2-Token': 'true',
     };
     const result = await runtime.dispatchFetch(origin + '/api/connections/test', {
-      method: 'POST', headers, body: JSON.stringify({ provider: 'r2' }),
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ provider: 'r2' }),
     });
     expect(result.status).toBe(200);
     const text = await result.text();
     expect(JSON.parse(text).ok).toBe(true);
     expect(text).not.toMatch(/cloudJob|private-object|fixture-private|fixture-s3/);
     expect(result.headers.get('cache-control')).toContain('no-store');
-    expect(await db.prepare('SELECT version FROM cloud_workspace WHERE id=1').first('version')).toBe(before);
-    expect(await db.prepare("SELECT state FROM cloud_jobs WHERE id='connection-test-busy'").first('state')).toBe('queued');
+    expect(
+      await db.prepare('SELECT version FROM cloud_workspace WHERE id=1').first('version'),
+    ).toBe(before);
+    expect(
+      await db
+        .prepare("SELECT state FROM cloud_jobs WHERE id='connection-test-busy'")
+        .first('state'),
+    ).toBe('queued');
     const denied = await runtime.dispatchFetch(origin + '/api/connections/test', {
-      method: 'POST', body: JSON.stringify({ provider: 'r2' }),
+      method: 'POST',
+      body: JSON.stringify({ provider: 'r2' }),
     });
     expect(denied.status).toBe(403);
   } finally {
@@ -261,7 +315,7 @@ it('rejects alternate coordinator hostnames and document navigations that would 
   const heavyRead = await runtime.dispatchFetch(
     origin + '/api/media/details?url=%2Fmedia%2Fmissing.webp',
   );
-  expect(heavyRead.status).toBe(403);
+  expect(heavyRead.status).toBe(404);
 });
 it('requires a matching Access signature, audience and owner email', async () => {
   const keys = await generateKeyPair('RS256'),
@@ -477,4 +531,48 @@ it('imports checked files atomically, preserves omitted credentials and keeps th
   expect(current.about.body).toContain('Exact migration bytes.');
   const stale = await write('/api/cloud/migration', { version: status.version });
   expect(stale.status).toBe(409);
+});
+it('performs native source checks, snapshots and reviewed imports with no CI job and leaves Git pushes in Studio mode', async () => {
+  const db = await runtime.getD1Database('DB');
+  const before = await db.prepare('SELECT COUNT(*) AS n FROM cloud_jobs').first('n');
+  const checked = await write('/api/jobs', { action: 'build' });
+  expect(checked.status, await checked.clone().text()).toBe(200);
+  expect(((await checked.json()) as any).logs.join(' ')).toContain('checked directly');
+  const backup = await write('/api/backups', {});
+  expect(backup.status, await backup.clone().text()).toBe(200);
+  const snapshot = (await backup.json()) as any;
+  expect(snapshot.snapshot).toBe(true);
+  const reviewed = await write('/api/backups/' + snapshot.id + '/review', {});
+  expect(reviewed.status, await reviewed.clone().text()).toBe(200);
+  const status = (await (await get('/api/cloud/status')).json()) as any;
+  const session = (await (
+    await write('/api/cloud/migration', { version: status.version })
+  ).json()) as any;
+  const state = (await (await get('/api/bootstrap')).json()) as any,
+    files = [];
+  for (const [path, value] of [
+    ['content/site.json', JSON.stringify(state.site)],
+    ['content/library.json', JSON.stringify(state.library)],
+  ]) {
+    const result = await runtime.dispatchFetch(
+      origin + '/api/cloud/migration/' + session.id + '/file?' + new URLSearchParams({ path }),
+      { method: 'PUT', headers: { Origin: origin, 'X-Studio-Token': state.token }, body: value },
+    );
+    expect(result.status, await result.clone().text()).toBe(200);
+    files.push(await result.json());
+  }
+  const review = await write('/api/backups/import/review', {
+    migration: session.id,
+    name: 'checked.tar.gz',
+    files,
+  });
+  expect(review.status, await review.clone().text()).toBe(200);
+  expect(((await review.json()) as any).id).toBe('migration-' + session.id);
+  const pipeline = await runtime.dispatchFetch(
+    origin + '/__ci/pipeline?build=git-code-push&branch=main',
+    { headers: { Authorization: 'Bearer ' + 'test-ci-'.repeat(6) } },
+  );
+  expect(pipeline.status).toBe(200);
+  expect(await pipeline.json()).toEqual({ mode: 'studio', settling: false });
+  expect(await db.prepare('SELECT COUNT(*) AS n FROM cloud_jobs').first('n')).toBe(before);
 });

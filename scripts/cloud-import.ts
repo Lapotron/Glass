@@ -13,6 +13,7 @@ import { z } from 'zod';
 import seed from '../tests/fixtures/notebook/site.json' with { type: 'json' };
 import { siteSchema } from '../src/shared/contracts.js';
 import { conflictingCloudChanges, validCloudExportPath } from '../src/shared/cloud-migration.js';
+import { portableNotebookPath } from '../src/shared/notebook-data.js';
 const arg = (name: string) => {
   const i = process.argv.indexOf('--' + name);
   return i < 0 ? undefined : process.argv[i + 1];
@@ -24,7 +25,8 @@ const directory = await fs.realpath(source),
 const manifest = z
   .object({
     format: z.literal('glass-cloud-workspace'),
-    version: z.literal(1),
+    version: z.union([z.literal(1), z.literal(2)]),
+    privateSettings: z.boolean().optional(),
     files: z
       .array(
         z.object({
@@ -39,6 +41,11 @@ const manifest = z
       .max(30000),
   })
   .parse(JSON.parse(await fs.readFile(path.join(directory, 'manifest.json'), 'utf8')));
+manifest.files = manifest.files.filter(
+  (file) =>
+    portableNotebookPath(file.path) ||
+    (manifest.privateSettings && /^\.studio\/(?:connections\.json|services\/)/.test(file.path)),
+);
 const setupFile = path.resolve('.studio/cloud/setup.json'),
   setup = JSON.parse(await fs.readFile(setupFile, 'utf8'));
 process.env.GLASS_STUDIO_ORIGIN = 'https://' + setup.hostname;
@@ -91,7 +98,12 @@ if (conflicts.some((file: any) => file.path === 'content/site.json')) {
     JSON.parse(await fs.readFile(path.join(recovery, 'data/content/site.json'), 'utf8')),
   );
   const incoming = siteSchema.parse(
-    JSON.parse(await fs.readFile(path.join(base, 'content/site.json'), 'utf8')),
+    JSON.parse(
+      await fs.readFile(
+        path.join(base, imported.get('content/site.json')?.storagePath || 'content/site.json'),
+        'utf8',
+      ),
+    ),
   );
   // Legacy navigation is regenerated from collections on save; it is not an independent author choice.
   previous.navigation = [];
@@ -112,7 +124,11 @@ if (current.version !== afterCopy.version)
   throw new Error('Cloud edits arrived during the safety copy. Retry after saving.');
 const overrides = new Map<string, string>();
 for (const file of current.files) {
-  if (file.path.startsWith('content/')) continue;
+  if (
+    file.path.startsWith('content/') ||
+    !/^\.studio\/(?:connections\.json|services\/)/.test(file.path)
+  )
+    continue;
   const existing = imported.get(file.path);
   if (existing && existing.sha === file.sha) continue;
   if (existing && Date.parse(existing.modified || '1970-01-01') > Date.parse(file.modified))

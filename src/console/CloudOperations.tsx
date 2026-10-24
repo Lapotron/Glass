@@ -32,12 +32,13 @@ export function CloudOperations({
     (job) => job.state === 'queued' && Date.now() - Date.parse(job.created) > 5 * 60_000,
   );
   const claimed = status?.jobs.some((job) => !!job.commit_sha);
+  const pipelineWorker = status?.studioWorker || status?.siteWorker;
   const dashboard =
     status?.accountId &&
     /^[a-f\d]{32}$/i.test(status.accountId) &&
-    status.siteWorker &&
-    /^[\w-]+$/.test(status.siteWorker)
-      ? `https://dash.cloudflare.com/${status.accountId}/workers/services/view/${status.siteWorker}/production`
+    pipelineWorker &&
+    /^[\w-]+$/.test(pipelineWorker)
+      ? `https://dash.cloudflare.com/${status.accountId}/workers/services/view/${pipelineWorker}/production`
       : '';
   return (
     <section className="glass-panel hosting-section hosting-jobs">
@@ -56,10 +57,10 @@ export function CloudOperations({
         <div className="hosting-queue-notice" role="status">
           <Icon name="Clock3" size={17} />
           <div>
-            <strong>{t('The reader build has not claimed this request yet.')}</strong>
+            <strong>{t('The Studio pipeline has not claimed this request yet.')}</strong>
             <p className="help">
               {t(
-                'Open its build log. Check the reader build commands, GLASS_CI_SECRETS and Access Service Auth policy. After fixing setup, cancel the unclaimed request and start the intended operation again in Studio.',
+                'Open its build log. Check the Studio pipeline commands, GLASS_CI_SECRETS and Access Service Auth policy. After fixing setup, cancel the unclaimed request and start the intended operation again in Studio.',
               )}
             </p>
           </div>
@@ -67,7 +68,7 @@ export function CloudOperations({
       )}
       <details className="hosting-build-help" open={waiting || !status?.buildsConfigured}>
         <summary>
-          {t('Reader build setup')} ·{' '}
+          {t('Studio pipeline setup')} ·{' '}
           {claimed
             ? t('Runner has connected')
             : status?.buildsConfigured

@@ -8,6 +8,10 @@ import {
   type Statement,
 } from './types.js';
 const encoder = new TextEncoder();
+export { jsonChunks } from './json-chunks.js';
+import { jsonChunks } from './json-chunks.js';
+const corePaths =
+  "path GLOB 'content/*' OR path GLOB '.studio/jobs/*' OR path GLOB '.studio/services/*' OR path IN ('.studio/connections.json','.studio/backup-settings.json','.studio/scheduler.json')";
 const workingPaths = [
   "path GLOB '.studio/render-cache/mermaid/*'",
   "path GLOB 'content/*'",
@@ -84,9 +88,13 @@ export async function unseal(bytes: Uint8Array, secret: string, path: string) {
 export class CloudWorkspace {
   files = new Map<string, FileRecord>();
   changed = new Map<string, Uint8Array | null>();
+  references = new Map<string, FileRecord>();
+  completion: Statement[] = [];
+  effects: { sql: string; values: unknown[] }[] = [];
   cache = new Map<string, Uint8Array>();
   modified = new Map<string, number>();
   version = 0;
+  serial = 0;
   directories = new Set([
     '',
     'content',
@@ -98,11 +106,23 @@ export class CloudWorkspace {
   constructor(
     readonly env: Pick<CloudEnv, 'DB' | 'BUCKET' | 'STUDIO_SECRET' | 'STORAGE_BUDGET_BYTES'>,
   ) {}
-  async load(workingSet = false) {
+  complete(sql: string, ...values: unknown[]) {
+    this.effects.push({ sql, values });
+    this.completion.push(this.env.DB.prepare(sql).bind(...values));
+  }
+  async load(workingSet: boolean | 'core' | 'catalog' = false) {
     // One statement gives a coherent revision/manifest snapshot, even across concurrent writers.
     const rows = await this.env.DB.prepare(
-      'SELECT w.version, f.* FROM cloud_workspace w LEFT JOIN ' +
-        (workingSet ? '(SELECT * FROM cloud_files WHERE ' + workingPaths + ')' : 'cloud_files') +
+      'SELECT w.version, ' +
+        (workingSet === 'catalog'
+          ? "f.path,f.sha,f.bytes,f.modified,CASE WHEN (f.path GLOB 'content/*' AND f.path NOT GLOB 'content/media/*') OR f.path GLOB '.studio/media-originals/*/record.json' THEN f.text ELSE NULL END AS text,f.encrypted"
+          : 'f.*') +
+        ' FROM cloud_workspace w LEFT JOIN ' +
+        (workingSet && workingSet !== 'catalog'
+          ? '(SELECT * FROM cloud_files WHERE ' +
+            (workingSet === 'core' ? corePaths : workingPaths) +
+            ')'
+          : 'cloud_files') +
         ' f ON 1=1 WHERE w.id=1',
     ).all<FileRecord & { version: number }>();
     this.version = rows.results[0]?.version || 0;
@@ -113,7 +133,9 @@ export class CloudWorkspace {
     return { version: this.version, files: [...this.files.values()] };
   }
   has(path: string) {
-    return this.changed.has(path) ? this.changed.get(path) !== null : this.files.has(path);
+    return this.changed.has(path)
+      ? this.changed.get(path) !== null
+      : this.references.has(path) || this.files.has(path);
   }
   async read(path: string) {
     path = filePath(path);
@@ -122,7 +144,7 @@ export class CloudWorkspace {
       if (value) return value;
       throw Object.assign(new Error('File not found: ' + path), { code: 'ENOENT' });
     }
-    const record = this.files.get(path);
+    const record = this.references.get(path) || this.files.get(path);
     if (!record) throw Object.assign(new Error('File not found: ' + path), { code: 'ENOENT' });
     if (record.text !== null) return encoder.encode(record.text);
     if (this.cache.has(path)) return this.cache.get(path)!;
@@ -141,6 +163,8 @@ export class CloudWorkspace {
   }
   write(path: string, value: Uint8Array | null) {
     path = filePath(path);
+    this.references.delete(path);
+    this.serial++;
     this.changed.set(path, value);
     this.modified.set(
       path,
@@ -150,8 +174,15 @@ export class CloudWorkspace {
       ),
     );
   }
+  /** Attach a verified, immutable object without reading its bytes into the isolate. */
+  reference(record: FileRecord) {
+    filePath(record.path);
+    this.changed.delete(record.path);
+    this.references.set(record.path, record);
+    this.serial++;
+  }
   paths() {
-    const paths = new Set(this.files.keys());
+    const paths = new Set([...this.files.keys(), ...this.references.keys()]);
     for (const [path, value] of this.changed) {
       if (value) paths.add(path);
       else paths.delete(path);
@@ -165,20 +196,29 @@ export class CloudWorkspace {
         (value && this.files.get(path)?.sha === (await hash(value)))
       )
         this.changed.delete(path);
-    if (!this.changed.size) return this.version;
+    if (!this.changed.size && !this.references.size && !this.completion.length) return this.version;
+    const paths = new Set([...this.changed.keys(), ...this.references.keys()]);
     const total =
-      [...this.files.values()].reduce((n, f) => n + f.bytes, 0) +
+      Number(
+        await this.env.DB.prepare(
+          'SELECT COALESCE(SUM(bytes),0) AS bytes FROM cloud_files',
+        ).first<number>('bytes'),
+      ) +
       [...this.changed].reduce(
         (n, [p, v]) => n + (v?.byteLength || 0) - (this.files.get(p)?.bytes || 0),
         0,
+      ) +
+      [...this.references].reduce(
+        (sum, [path, file]) => sum + file.bytes - (this.files.get(path)?.bytes || 0),
+        0,
       );
     const limit = Number(this.env.STORAGE_BUDGET_BYTES || 5 * 1024 ** 3);
-    if (!Number.isFinite(limit) || limit <= 0 || total > limit)
+    if (!Number.isFinite(limit) || limit <= 0 || total > 8 * 1024 ** 3)
       throw new CloudError(
-        'Workspace storage budget reached. Review retained data before adding files.',
+        'Notebook logical size exceeds the 8 GiB portable workspace limit, or its storage budget is invalid. Physical storage is checked separately and shared blobs are counted once.',
         413,
       );
-    const records: FileRecord[] = [];
+    const records: FileRecord[] = [...this.references.values()];
     for (const [path, value] of this.changed)
       if (value) {
         const sha = await hash(value),
@@ -188,7 +228,7 @@ export class CloudWorkspace {
           !path.startsWith('content/media/') &&
           !path.startsWith('.studio/builds/') &&
           /\.(?:json|md|txt|log|html|css|js|mjs|xml)$/.test(path) &&
-          value.byteLength < 512 * 1024
+          value.byteLength < 128 * 1024
             ? new TextDecoder('utf-8', { fatal: true }).decode(value)
             : null;
         // Private originals/backups never share the public media bucket. Authenticated manifests own objects.
@@ -213,22 +253,25 @@ export class CloudWorkspace {
         new Date().toISOString(),
       ),
     ];
-    const staged = this.changed.size > 40 ? crypto.randomUUID() : null;
+    const byPath = new Map(records.map((record) => [record.path, record]));
+    const staged = paths.size > 35 ? crypto.randomUUID() : null;
     if (staged) {
-      for (const [path] of this.changed) {
-        const r = records.find((x) => x.path === path);
+      const values = [...paths].map((path) => {
+        const r = byPath.get(path);
+        return [
+          path,
+          r?.sha || null,
+          r?.bytes || 0,
+          r?.modified || '',
+          r?.text ?? null,
+          r?.encrypted || 0,
+        ];
+      });
+      for (const chunk of jsonChunks(values)) {
         await this.env.DB.prepare(
-          'INSERT INTO cloud_patches(id,path,sha,bytes,modified,text,encrypted) VALUES(?,?,?,?,?,?,?)',
+          "INSERT INTO cloud_patches SELECT ?,json_extract(value,'$[0]'),json_extract(value,'$[1]'),json_extract(value,'$[2]'),json_extract(value,'$[3]'),json_extract(value,'$[4]'),json_extract(value,'$[5]') FROM json_each(?)",
         )
-          .bind(
-            staged,
-            path,
-            r?.sha || null,
-            r?.bytes || 0,
-            r?.modified || '',
-            r?.text ?? null,
-            r?.encrypted || 0,
-          )
+          .bind(staged, chunk)
           .run();
       }
       statements.push(
@@ -240,10 +283,10 @@ export class CloudWorkspace {
         ).bind(staged),
       );
     }
-    for (const [path, value] of staged ? [] : this.changed) {
-      const record = records.find((r) => r.path === path);
+    for (const path of staged ? [] : paths) {
+      const record = byPath.get(path);
       statements.push(
-        value
+        record
           ? this.env.DB.prepare(
               'INSERT INTO cloud_files(path,sha,bytes,modified,text,encrypted) VALUES(?,?,?,?,?,?) ON CONFLICT(path) DO UPDATE SET sha=excluded.sha,bytes=excluded.bytes,modified=excluded.modified,text=excluded.text,encrypted=excluded.encrypted',
             ).bind(
@@ -257,7 +300,10 @@ export class CloudWorkspace {
           : this.env.DB.prepare('DELETE FROM cloud_files WHERE path=?').bind(path),
       );
     }
-    statements.push(this.env.DB.prepare('UPDATE cloud_workspace SET version=version+1 WHERE id=1'));
+    statements.push(
+      this.env.DB.prepare('UPDATE cloud_workspace SET version=version+1 WHERE id=1'),
+      ...this.completion,
+    );
     try {
       await this.env.DB.batch(statements);
     } catch (error) {
@@ -270,12 +316,15 @@ export class CloudWorkspace {
     }
     if (staged)
       await this.env.DB.prepare('DELETE FROM cloud_patches WHERE id=?').bind(staged).run();
-    for (const [path, value] of this.changed) {
-      const record = records.find((r) => r.path === path);
-      if (value && record) this.files.set(path, record);
+    for (const path of paths) {
+      const record = byPath.get(path);
+      if (record) this.files.set(path, record);
       else this.files.delete(path);
     }
     this.changed.clear();
+    this.references.clear();
+    this.completion.length = 0;
+    this.effects.length = 0;
     return ++this.version;
   }
 }
@@ -303,7 +352,7 @@ export async function stageFile(
     !path.startsWith('content/media/') &&
     !path.startsWith('.studio/builds/') &&
     /\.(?:json|md|txt|log|html|css|js|mjs|xml)$/.test(path) &&
-    value.byteLength < 512 * 1024
+    value.byteLength < 128 * 1024
       ? new TextDecoder('utf-8', { fatal: true }).decode(value)
       : null;
   await env.DB.prepare(
@@ -342,9 +391,9 @@ export async function commitStaged(
     (replace
       ? totals.staged + retained.reduce((sum, file) => sum + file.bytes, 0)
       : totals.current - totals.replaced + totals.staged) >
-    Number(env.STORAGE_BUDGET_BYTES || 5 * 1024 ** 3)
+    8 * 1024 ** 3
   )
-    throw new CloudError('Workspace storage budget reached.', 413);
+    throw new CloudError('Notebook logical size exceeds the 8 GiB portable workspace limit.', 413);
   const statements = [
     env.DB.prepare('INSERT INTO cloud_commits(parent,actor,created) VALUES(?,?,?)').bind(
       version,

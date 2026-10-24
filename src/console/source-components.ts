@@ -116,13 +116,13 @@ class PreviewQueue {
         if (typeof result.html !== 'string' && typeof result.error !== 'string')
           throw new Error(t('Invalid component preview response.'));
         if (result.html && result.html.length < 512 * 1024) {
-          this.cacheBytes -= this.cache.get(task.key)?.html?.length || 0;
+          this.cacheBytes -= (this.cache.get(task.key)?.html?.length || 0) * 2;
           this.cache.delete(task.key);
           this.cache.set(task.key, result);
-          this.cacheBytes += result.html.length;
+          this.cacheBytes += result.html.length * 2;
           while (this.cache.size > 48 || this.cacheBytes > 8 * 1024 * 1024) {
             const first = this.cache.keys().next().value!;
-            this.cacheBytes -= this.cache.get(first)?.html?.length || 0;
+            this.cacheBytes -= (this.cache.get(first)?.html?.length || 0) * 2;
             this.cache.delete(first);
           }
         }
@@ -221,14 +221,17 @@ class ComponentWidget extends WidgetType {
       this.action(this.block, 'edit', cell),
     );
     let expand: HTMLButtonElement | undefined;
-    let disposeDiagrams: (()=>void)|undefined;
+    let disposeDiagrams: (() => void) | undefined;
     if (this.block.kind !== 'table') {
       expand = button('Expand', () => {
-        const figure=body.querySelector<HTMLElement>('figure[data-mermaid]');
-        if (this.block.kind==='mermaid' && figure) void openDiagramViewer(figure,{trigger:expand}).catch((error)=>{if(expand)expand.title=(error as Error).message;});
-        else this.action(this.block,'expand',cell);
+        const figure = body.querySelector<HTMLElement>('figure[data-mermaid]');
+        if (this.block.kind === 'mermaid' && figure)
+          void openDiagramViewer(figure, { trigger: expand }).catch((error) => {
+            if (expand) expand.title = (error as Error).message;
+          });
+        else this.action(this.block, 'expand', cell);
       });
-      if(this.block.kind==='mermaid') expand.disabled=true;
+      if (this.block.kind === 'mermaid') expand.disabled = true;
     }
     const more = document.createElement('details'),
       summary = document.createElement('summary'),
@@ -295,10 +298,10 @@ class ComponentWidget extends WidgetType {
           body.replaceChildren();
           if (result.error) throw new Error(result.error);
           body.append(componentPreviewFragment(result.html!));
-          if(this.block.kind==='mermaid') {
+          if (this.block.kind === 'mermaid') {
             disposeDiagrams?.();
-            disposeDiagrams=registerDiagramViewers(body,{control:false,trigger:expand});
-            if(expand) expand.disabled=false;
+            disposeDiagrams = registerDiagramViewers(body, { control: false, trigger: expand });
+            if (expand) expand.disabled = false;
           }
           if (body.querySelector('[data-external-src]'))
             button(
@@ -450,7 +453,11 @@ export function createSourceComponentPreviews(action: ComponentAction) {
       blocks: SourceComponent[],
       enabled: Record<ComponentPreviewKind, boolean>,
     ) {
-      view.dispatch({ effects: update.of(blocks.filter((block) => block.kind !== 'pseudocode' && enabled[block.kind])) });
+      view.dispatch({
+        effects: update.of(
+          blocks.filter((block) => block.kind !== 'pseudocode' && enabled[block.kind]),
+        ),
+      });
     },
     dispose: () => queue.dispose(),
   };

@@ -27,13 +27,13 @@ export function createSourceMathController(initialSettings?: MathSettings) {
   const cache = new Map<number, MathPreviewResult>();
   let cacheBytes = 0;
   const setResult = (id: number, result: MathPreviewResult) => {
-    cacheBytes -= cache.get(id)?.html?.length || 0;
+    cacheBytes -= (cache.get(id)?.html?.length || 0) * 2;
     cache.delete(id);
     cache.set(id, result);
-    cacheBytes += result.html?.length || 0;
+    cacheBytes += (result.html?.length || 0) * 2;
     while (cache.size > 512 || cacheBytes > 8 * 1024 * 1024) {
       const first = cache.keys().next().value!;
-      cacheBytes -= cache.get(first)?.html?.length || 0;
+      cacheBytes -= (cache.get(first)?.html?.length || 0) * 2;
       cache.delete(first);
     }
   };

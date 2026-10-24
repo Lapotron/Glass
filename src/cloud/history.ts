@@ -23,7 +23,7 @@ export function cloudJobRecord(job: CloudJob, env: CloudEnv, result?: any): Job 
     ...(job.state === 'failed' && job.phase ? { failedAt: job.phase as Job['failedAt'] } : {}),
     target: {
       canonicalUrl: env.SITE_ORIGIN,
-      project: 'Workers',
+      project: body?.deployment?.project || env.PAGES_PROJECT || 'Pages',
       branch: env.PRODUCTION_BRANCH || 'main',
     },
     ...(body?.build ? { build: body.build, mediaDelivery: body.build.media ? 'r2' : 'pages' } : {}),
@@ -49,7 +49,7 @@ export async function history(ws: CloudWorkspace, env: CloudEnv, rows: CloudJob[
 export async function persistHistory(env: CloudEnv, job: CloudJob, result?: any) {
   if (job.kind === 'api') return;
   for (let attempt = 0; attempt < 3; attempt++) {
-    const ws = await new CloudWorkspace(env).load(true);
+    const ws = await new CloudWorkspace(env).load('core');
     ws.write(
       `.studio/jobs/${job.id}.json`,
       new TextEncoder().encode(JSON.stringify(cloudJobRecord(job, env, result), null, 2)),

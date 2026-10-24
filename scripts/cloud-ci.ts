@@ -22,6 +22,7 @@ import {
   responseToFile,
   uploadCloudFile,
   cloudFileHash,
+  uploadArtifactFile,
 } from './cloud-client.js';
 import { progressReporter } from './cloud-progress.js';
 import { mapConcurrent } from '../src/engine/work-cache.js';
@@ -231,17 +232,24 @@ try {
     }
     await fs.rm(path.join(root, 'dist'), { recursive: true, force: true });
   } else {
-    const preparation = spawnSync(
-      process.execPath,
-      ['--import', 'tsx', 'scripts/cloud-build.ts', 'site'],
-      { stdio: 'inherit' },
-    );
-    if (preparation.status !== 0) throw new Error('Could not prepare the public Worker.');
     const store = new Store(root);
     const target = (await store.snapshot()).site;
+    if (process.env.GLASS_PAGES_PROJECT)
+      target.cloudflare.projectName = process.env.GLASS_PAGES_PROJECT;
+    if (!target.cloudflare.projectName)
+      throw new Error('Choose a Direct Upload Pages project in Hosting before publishing.');
+    await fs.writeFile(
+      path.join(folder, 'pages.json'),
+      JSON.stringify({
+        project: target.cloudflare.projectName,
+        branch: target.cloudflare.productionBranch,
+        canonical: target.url,
+        account: target.cloudflare.accountId,
+      }),
+    );
     if (target.cloudflare.accountId !== process.env.CLOUDFLARE_ACCOUNT_ID)
       throw new Error(
-        'The notebook Cloudflare account is missing or differs from Hosting. In Site settings → Publishing, select the deployed account and save. Then use Build & Publish in Studio to approve a new release; a Git push only rebuilds the preceding approved settings.',
+        'The notebook Cloudflare account is missing or differs from Hosting. In Site settings → Publishing, select the deployed account and save. Then use Build & Publish in Studio to approve a new release; Git pushes update Studio only.',
       );
     if (new URL(target.url).origin !== new URL(process.env.GLASS_SITE_ORIGIN || target.url).origin)
       throw new Error(
@@ -276,9 +284,6 @@ try {
     }
     await fs.rm(path.join(folder, 'public'), { recursive: true, force: true });
     await fs.cp(built.outputDir, path.join(folder, 'public'), { recursive: true });
-    // Pages-specific runtime files do not belong in a Workers Static Assets directory.
-    for (const name of ['_worker.js', '_routes.json'])
-      await fs.rm(path.join(folder, 'public', name), { force: true });
     result = {
       status: 200,
       body: {
@@ -291,10 +296,21 @@ try {
     };
   }
   if (job.kind === 'publish') {
+    const artifact = path.join(folder, 'public'),
+      assets = await filesUnder(artifact);
+    const records = await mapConcurrent(assets, 4, (name) =>
+      uploadArtifactFile(job.id, path.join(artifact, name), name),
+    );
+    await cloudFetch('jobs/' + job.id + '/artifact-index', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(records),
+    });
     await mapConcurrent(
       (await filesUnder(root)).filter(
         (name) =>
-          name.startsWith('.studio/builds/' + job.id + '/') ||
+          name === '.studio/builds/' + job.id + '/source.json' ||
+          name === '.studio/builds/' + job.id + '/media-transfer.json' ||
           name.startsWith('.studio/render-cache/mermaid/') ||
           name.startsWith('.studio/cloud-media/'),
       ),

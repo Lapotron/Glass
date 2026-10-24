@@ -233,6 +233,29 @@ export async function uploadCloudFile(
   }
   await uploadMultipartFile('jobs/' + job + '/transfers', file, stat, sha256, { purpose, target });
 }
+export async function uploadArtifactFile(job: string, file: string, name: string) {
+  const stat = await fs.stat(file),
+    checksum = await cloudFileHash(file);
+  if (stat.size <= BACKUP_CHUNK_BYTES)
+    await cloudFetch('jobs/' + job + '/artifact-file?' + new URLSearchParams({ sha: checksum }), {
+      method: 'PUT',
+      body: new Uint8Array(await fs.readFile(file)),
+    });
+  else
+    await uploadMultipartFile('jobs/' + job + '/transfers', file, stat, checksum, {
+      purpose: 'file',
+      target: '.studio/builds/' + job + '/public/' + name,
+      unindexed: '1',
+    });
+  return {
+    path: name,
+    sha: checksum,
+    bytes: stat.size,
+    modified: stat.mtime.toISOString(),
+    text: null,
+    encrypted: 0 as const,
+  };
+}
 export async function uploadCloudMigration(
   id: string,
   file: string,

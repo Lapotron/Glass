@@ -2,6 +2,8 @@
 
 Studio manages author-owned files. These tools never publish automatically or remove objects from R2. Writing and Lab retain canonical Markdown; the public notebook remains a static build.
 
+Hosted Studio performs daily work directly in D1 and private R2, without CI. Large mutations stage files and activate one version-checked metadata transaction. Its [storage and recovery controls](hosted-studio.md#operation-and-recovery) manage snapshots, history references, retained releases and bounded physical garbage collection. The filesystem journals and local archive details below describe local Studio.
+
 ## Selection and lists
 
 `Selection.tsx` supplies native checkboxes, mixed select-visible state, a shared selection toolbar, pagination and review dialogs. Lists show 25 items per page. Selection captures IDs and revisions, survives pagination and sorting, and clears when the collection, search or filter changes. Select all matching is explicit, bounded to 500 items. A filesystem refresh marks changed selections stale rather than silently replacing their revision tokens. Refresh selection adopts current versions; stale items removed elsewhere fall out of the selection.
@@ -14,7 +16,7 @@ Trash supports grouped restore and permanent deletion, including entry revision 
 
 ## Transactions and read consistency
 
-`Operations`, backup batch changes and media cleanup run on the Store queue. Validate every selected revision and resulting schema/route before installing any changes. `commitFiles` stages before/after bytes and a version 1 journal under private `.studio/operations/{uuid}/`. Each step records a constrained relative destination and SHA-256 before/after values. Journals move from `prepared` through `applying` to `committed`; installation uses per-file rename. Multi-file operations have a 10,000-file ceiling.
+Local `Operations`, backup batch changes and media cleanup run on the Store queue. Validate every selected revision and resulting schema/route before installing any changes. `commitFiles` stages before/after bytes and a version 1 journal under private `.studio/operations/{uuid}/`. Each step records a constrained relative destination and SHA-256 before/after values. Journals move from `prepared` through `applying` to `committed`; installation uses per-file rename. Multi-file operations have a 10,000-file ceiling.
 
 Failure rolls back the whole group. Queued snapshots and Studio startup recover interrupted operations before returning notebook data. Recovery validates all rollback checksums and current bytes first. An unexpected external edit stops recovery and retains the journal for inspection instead of overwriting the edit. Do not remove such a journal as an automatic retry. Use `Store.snapshot()` for read-only consumers; code already holding `Store.exclusive` uses `read()` to avoid nesting the queue. Recovery supplies application-level consistency, not a promise that an unrelated external editor cannot observe individual filesystem renames.
 
@@ -24,11 +26,15 @@ Import reviews up to 100 UTF-8 `.md` files, at most 1 MB per file and 20 MiB tot
 
 A single entry downloads its canonical `.md` bytes. Multi-entry Markdown, backup and media exports stream a Unicode-safe PAX `.tar.gz`, preserving canonical filenames. Exports are prepared locally with selection/revision checks, bounded to 512 MiB total and five pending downloads. Download tickets expire after five minutes; completed streams remove their temporary files. `.studio/exports` is disposable private state, cleared at startup. Portable backup export remains a different format, suitable for complete notebook restoration.
 
+Hosted selection exports instead use immutable 24-hour leases and the browser streaming worker, with filesystem output or bounded temporary OPFS parts. Closing a failed export does not delete the saved snapshot or source files.
+
 ## Backups and media maintenance
 
 Saved backups have immutable archive identity, a user label, date, size, reason, checksum and selection revision. Rename changes the label only. Combined download/deletion validates the complete selection. Permanent-deletion review explicitly warns when the selection includes the last saved backup. Notebook restoration remains single-backup, separately reviewed and protected by a full safety backup.
 
-Daily backups default off. Local backups run while the Studio server is running; hosted backups use the private Worker cron and reader build queue, including while the browser is closed. On startup, overdue enabled work is checked; subsequent checks run once a minute. Successful automatic backups are at least 24 hours apart. Keep 14 automatic backups by default (configurable 1–100); retention never deletes manual or safety backups. Build/publication, scheduling and restore work defer automatic backups. Errors hold automatic attempts until the author retries or saves preferences. Private `.studio/backup-settings.json` uses an independent revision and is excluded from portable/public output.
+Hosted saved backups are reference snapshots; unchanged blobs are shared. Their downloads assemble portable version-3 archives on demand. Deletion moves references to seven-day recovery; Purge now is a separate review. Shared bytes remain protected by other retained references.
+
+Daily backups default off. Local backups run while the Studio server is running; hosted backups create native snapshots from the private Worker cron, including while the browser is closed, without a build queue. On startup, overdue enabled work is checked; subsequent checks run once a minute. Successful automatic backups are at least 24 hours apart. Keep 14 automatic backups by default (configurable 1–100); retention never deletes manual or safety backups. Build/publication, scheduling and restore work defer automatic backups. Errors hold automatic attempts until the author retries or saves preferences. Private `.studio/backup-settings.json` uses an independent revision and is excluded from portable/public output.
 
 The media usage graph includes all entries, their covers, About, settings, collections, entry revisions, Trash, photo undo and About history. Markdown media references include links, images, reference definitions, supported directive attributes and raw HTML; ordinary code examples are ignored. Missing files are reported. Current references and retained-history references block deletion; parse failures block cleanup rather than declaring unknown files unused.
 

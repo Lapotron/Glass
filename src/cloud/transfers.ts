@@ -24,6 +24,7 @@ type Transfer = {
   job_id: string | null;
   state: 'uploading' | 'assembling' | 'ready' | 'cancelled';
   expires: string;
+  unindexed: number;
 };
 export async function boundedUploadBody(request: Request, maximum: number) {
   const length = request.headers.get('Content-Length');
@@ -106,6 +107,8 @@ export class CloudTransfers {
       sha: string;
       job: string;
       modified?: string;
+      unindexed?: boolean;
+      retentionDays?: 7;
     },
   ) {
     if (this.env.PREVIEW === 'true')
@@ -186,9 +189,18 @@ export class CloudTransfers {
           destination?.modified || null,
           destination?.job || null,
           now,
-          new Date(Date.now() + BACKUP_UPLOAD_TTL_MS).toISOString(),
+          new Date(
+            Date.now() +
+              (purpose === 'migration' || destination?.retentionDays === 7
+                ? 7 * 86400000
+                : BACKUP_UPLOAD_TTL_MS),
+          ).toISOString(),
         )
         .run();
+      if (destination?.unindexed)
+        await this.env.DB.prepare('UPDATE cloud_transfers SET unindexed=1 WHERE id=?')
+          .bind(id)
+          .run();
     } catch (error) {
       await upload.abort();
       await discardTransferObject(this.env, key);
@@ -226,6 +238,33 @@ export class CloudTransfers {
     )
       .bind(id, part, bytes.byteLength, sha256, uploaded.etag, id)
       .run();
+    if (row.purpose === 'migration')
+      await this.env.DB.batch([
+        this.env.DB.prepare('UPDATE cloud_transfers SET expires=? WHERE id=?').bind(
+          new Date(Date.now() + 7 * 86400000).toISOString(),
+          id,
+        ),
+        this.env.DB.prepare('UPDATE cloud_migrations SET touched=? WHERE id=?').bind(
+          new Date().toISOString(),
+          row.job_id,
+        ),
+      ]);
+    if (
+      row.purpose === 'file' &&
+      (await this.env.DB.prepare('SELECT id FROM cloud_media_uploads WHERE id=? AND actor=?')
+        .bind(row.job_id, actor)
+        .first())
+    )
+      await this.env.DB.batch([
+        this.env.DB.prepare('UPDATE cloud_transfers SET expires=? WHERE id=?').bind(
+          new Date(Date.now() + 7 * 86400000).toISOString(),
+          id,
+        ),
+        this.env.DB.prepare('UPDATE cloud_media_uploads SET updated=? WHERE id=?').bind(
+          new Date().toISOString(),
+          row.job_id,
+        ),
+      ]);
     return { part, bytes: bytes.byteLength, sha256 };
   }
   async finish(id: string, actor: string) {
@@ -286,7 +325,7 @@ export class CloudTransfers {
           customMetadata: { sha256: row.sha! },
         });
       }
-      if (row.purpose === 'file' || row.purpose === 'migration')
+      if (!row.unindexed && (row.purpose === 'file' || row.purpose === 'migration'))
         await this.env.DB.prepare(
           'INSERT INTO cloud_patches(id,path,sha,bytes,modified,text,encrypted) VALUES(?,?,?,?,?,NULL,0) ON CONFLICT(id,path) DO UPDATE SET sha=excluded.sha,bytes=excluded.bytes,modified=excluded.modified,text=NULL,encrypted=0',
         )
@@ -308,20 +347,21 @@ export class CloudTransfers {
     if (row.purpose !== 'backup') await discardTransferObject(this.env, row.key);
     return { ...row, state: 'ready' as const };
   }
-  async discard(id: string, actor: string) {
+  async discard(id: string, actor: string, expiredOnly = false) {
     z.uuid().parse(id);
     const row = await this.env.DB.prepare('SELECT * FROM cloud_transfers WHERE id=? AND actor=?')
       .bind(id, actor)
       .first<Transfer>();
-    if (!row || !['backup', 'migration'].includes(row.purpose))
+    if (!row || (!expiredOnly && !['backup', 'migration'].includes(row.purpose)))
       throw new CloudError('Backup transfer was not found.', 404);
+    const expired = Date.parse(row.expires) <= Date.now();
+    if (expiredOnly && !expired) throw new CloudError('An active transfer cannot be expired.', 409);
     const active = await this.env.DB.prepare(
       "SELECT id FROM cloud_jobs WHERE actor=? AND state IN ('queued','running') LIMIT 1",
     )
       .bind(actor)
       .first();
-    const expired = Date.parse(row.expires) <= Date.now();
-    if ((row.state === 'assembling' && !expired) || active)
+    if ((row.state === 'assembling' && !expired) || (active && !expiredOnly))
       throw new CloudError(
         'A cloud operation is active. Wait for it to finish before discarding the transfer.',
         409,

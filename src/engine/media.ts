@@ -1,3 +1,4 @@
+import { mediaSourceSchema } from '../shared/media-upload.js';
 import { effectiveMediaCode, mediaLinkMap } from './media-links.js';
 import {
   mediaDownloadName,
@@ -31,19 +32,7 @@ export const transformSchema = z.object({
     .optional(),
 });
 export type ImageTransform = z.infer<typeof transformSchema>;
-const recordSchema = z.object({
-  sourceId: z.uuid(),
-  name: z.string().max(300),
-  sha256: z.string().regex(/^[a-f0-9]{64}$/),
-  variants: z.array(
-    z.object({
-      name: z.string().regex(/^[\w-]+\.webp$/),
-      width: z.number().int().positive(),
-      height: z.number().int().positive(),
-      transform: transformSchema,
-    }),
-  ),
-});
+const recordSchema = mediaSourceSchema;
 const read = (bytes: Buffer, animated = false) =>
   sharp(bytes, { limitInputPixels: 40000000, animated });
 type MediaIndex = {

@@ -1,6 +1,6 @@
 import { t } from '../shared/i18n.js';
 import { UiText } from '../shared/UiText.js';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type MouseEvent } from 'react';
 import { Button, Icon } from '../shared/ui.js';
 import type { CollectionsConfig } from '../shared/collections.js';
 import type {
@@ -8,7 +8,7 @@ import type {
   NotebookResetResult,
   ResetRecovery,
 } from '../shared/notebook-reset.js';
-import { api, send } from './api.js';
+import { api, send, isCloudStudio } from './api.js';
 import { ErrorBox, Field, Modal } from './components.js';
 import { formatBytes } from '../shared/media-details.js';
 
@@ -52,16 +52,54 @@ export function NotebookResetControls({
     backups: 'Saved backups',
     builds: 'Build history',
   };
+  async function downloadRecovery(event: MouseEvent<HTMLAnchorElement>, url: string) {
+    if (busy) {
+      event.preventDefault();
+      return;
+    }
+    if (!isCloudStudio()) return;
+    const snapshot = /^\/api\/backups\/([^/]+)\/download$/.exec(url);
+    if (!snapshot) return;
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const { downloadCloudBackup } = await import('./cloud-backup.js');
+      await downloadCloudBackup(snapshot[1]);
+    } catch (failure) {
+      setError((failure as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
   return (
     <section className="notebook-reset-section" aria-labelledby="notebook-reset-heading">
       <div className="settings-card-heading">
         <Icon name="RotateCcw" />
-        <h2 id="notebook-reset-heading" data-ui={"Reset notebook data"}>{t("Reset notebook data")}</h2>
+        <h2 id="notebook-reset-heading" data-ui={'Reset notebook data'}>
+          {t('Reset notebook data')}
+        </h2>
       </div>
-      <p className="help" data-ui={"Start with an empty notebook. Keep your site identity, appearance, content names, Cloudflare/R2 settings and site artwork."}>
-        {t("Start with an empty notebook. Keep your site identity, appearance, content names, Cloudflare/R2 settings and site artwork.")}</p>
-      <p className="help" data-ui={"Clear writings, photo moments, albums, About text, unused media, Trash, revisions, saved backups and build history. A fresh recovery copy is saved before clearing data. Your deployed site and R2 objects stay available."}>
-        {t("Clear writings, photo moments, albums, About text, unused media, Trash, revisions, saved backups and build history. A fresh recovery copy is saved before clearing data. Your deployed site and R2 objects stay available.")}</p>
+      <p
+        className="help"
+        data-ui={
+          'Start with an empty notebook. Keep your site identity, appearance, content names, Cloudflare/R2 settings and site artwork.'
+        }
+      >
+        {t(
+          'Start with an empty notebook. Keep your site identity, appearance, content names, Cloudflare/R2 settings and site artwork.',
+        )}
+      </p>
+      <p
+        className="help"
+        data-ui={
+          'Clear writings, photo moments, albums, About text, unused media, Trash, revisions, saved backups and build history. A fresh recovery copy is saved before clearing data. Your deployed site and R2 objects stay available.'
+        }
+      >
+        {t(
+          'Clear writings, photo moments, albums, About text, unused media, Trash, revisions, saved backups and build history. A fresh recovery copy is saved before clearing data. Your deployed site and R2 objects stay available.',
+        )}
+      </p>
       <Button
         variant="danger"
         icon={busy ? 'LoaderCircle' : 'RotateCcw'}
@@ -70,10 +108,10 @@ export function NotebookResetControls({
           setBusy(true);
           setError('');
           setMessage('');
+          setConfirmation('');
           try {
             await beforeReview();
             setReview(await send<NotebookResetReview>('notebook/reset/review', 'POST', {}));
-            setConfirmation('');
           } catch (failure) {
             setError((failure as Error).message);
           } finally {
@@ -81,7 +119,8 @@ export function NotebookResetControls({
           }
         }}
       >
-        <UiText message={"Review data reset"}/></Button>
+        <UiText message={'Review data reset'} />
+      </Button>
       {!review && <ErrorBox error={error} />}
       {message && (
         <p className="operation-message" role="status">
@@ -91,8 +130,15 @@ export function NotebookResetControls({
       {recovery && (
         <p className="reset-recovery-link">
           <Icon name="Archive" size={15} />
-          <a href={recovery.url} download data-ui={"Download the recovery copy"}>
-            {t("Download the recovery copy")}</a>
+          <a
+            href={recovery.url}
+            download
+            data-ui={'Download the recovery copy'}
+            aria-disabled={busy}
+            onClick={(event) => void downloadRecovery(event, recovery.url)}
+          >
+            {t('Download the recovery copy')}
+          </a>
           <span>
             {formatBytes(recovery.bytes)} · {new Date(recovery.createdAt).toLocaleString()}
           </span>
@@ -100,7 +146,7 @@ export function NotebookResetControls({
       )}
       {review && (
         <Modal
-          title={t("Reset notebook data?")}
+          title={t('Reset notebook data?')}
           wide
           onClose={() => {
             if (!busy) {
@@ -117,7 +163,8 @@ export function NotebookResetControls({
                   setError('');
                 }}
               >
-                <UiText message={"Cancel"}/></Button>
+                <UiText message={'Cancel'} />
+              </Button>
               <Button
                 variant="danger"
                 icon={busy ? 'LoaderCircle' : 'RotateCcw'}
@@ -135,7 +182,11 @@ export function NotebookResetControls({
                     setReview(null);
                     setConfirmation('');
                     setMessage(
-                      'Notebook data reset. Your site settings and Cloudflare/R2 connection are kept. The empty local preview is ready.',
+                      isCloudStudio()
+                        ? t(
+                            'Notebook reset. Site settings and connections are kept. Publish when you are ready to update the public site.',
+                          )
+                        : 'Notebook data reset. Your site settings and Cloudflare/R2 connection are kept. The empty local preview is ready.',
                     );
                     await onCompleted();
                   } catch (failure) {
@@ -145,14 +196,21 @@ export function NotebookResetControls({
                   }
                 }}
               >
-                {busy ? t("Resetting…") : t("Reset notebook data")}
+                {busy ? t('Resetting…') : t('Reset notebook data')}
               </Button>
             </>
           }
         >
           <p className="modal-intro">
-            <UiText message={"This clears data in "}/><strong>{review.siteName}</strong><UiText message={". Your site settings, Cloudflare/R2 credentials, reader/editor preferences and "}/>{review.keptMedia.length}{' '}
-            <UiText message={"referenced site files are kept."}/></p>
+            <UiText message={'This clears data in '} />
+            <strong>{review.siteName}</strong>
+            <UiText
+              message={
+                '. Your site settings, Cloudflare/R2 credentials, reader/editor preferences and '
+              }
+            />
+            {review.keptMedia.length} <UiText message={'referenced site files are kept.'} />
+          </p>
           <dl className="reset-counts">
             {Object.entries(review.counts).map(([key, count]) => (
               <div key={key}>
@@ -161,15 +219,29 @@ export function NotebookResetControls({
               </div>
             ))}
           </dl>
-          <p className="help" data-ui={"A portable recovery copy of the current notebook is retained. Existing backup archives and earlier reset copies are removed. The reset also replaces the local public preview with an empty build; it does not publish or delete remote files."}>
-            {t("A portable recovery copy of the current notebook is retained. Existing backup archives and earlier reset copies are removed. The reset also replaces the local public preview with an empty build; it does not publish or delete remote files.")}</p>
-          <a className="button secondary small" href={review.backupUrl} download>
+          <p className="help">
+            {isCloudStudio()
+              ? t(
+                  'A reference snapshot keeps your current notebook recoverable. Existing backups move to seven-day recovery. Reset does not build or publish; the public site stays available.',
+                )
+              : t(
+                  'A portable recovery copy of the current notebook is retained. Existing backup archives and earlier reset copies are removed. The reset also replaces the local public preview with an empty build; it does not publish or delete remote files.',
+                )}
+          </p>
+          <a
+            className="button secondary small"
+            href={review.backupUrl}
+            download
+            aria-disabled={busy}
+            onClick={(event) => void downloadRecovery(event, review.backupUrl)}
+          >
             <Icon name="Download" size={15} />
-            <UiText message={"Download recovery copy · "}/>{formatBytes(review.backupBytes)}
+            <UiText message={'Download recovery copy · '} />
+            {formatBytes(review.backupBytes)}
           </a>
           {review.keptMedia.length > 0 && (
             <details className="reset-kept-media">
-              <summary data-ui={"Site files being kept"}>{t("Site files being kept")}</summary>
+              <summary data-ui={'Site files being kept'}>{t('Site files being kept')}</summary>
               <ul>
                 {review.keptMedia.map((url) => (
                   <li key={url}>
@@ -179,7 +251,7 @@ export function NotebookResetControls({
               </ul>
             </details>
           )}
-          <Field label={t("Type RESET to confirm")}>
+          <Field label={t('Type RESET to confirm')}>
             <input
               value={confirmation}
               autoComplete="off"
@@ -197,9 +269,9 @@ export function NotebookResetControls({
               onClick={async () => {
                 setBusy(true);
                 setError('');
+                setConfirmation('');
                 try {
                   setReview(await send<NotebookResetReview>('notebook/reset/review', 'POST', {}));
-                  setConfirmation('');
                 } catch (failure) {
                   setError((failure as Error).message);
                 } finally {
@@ -207,7 +279,8 @@ export function NotebookResetControls({
                 }
               }}
             >
-              <UiText message={"Review reset again"}/></Button>
+              <UiText message={'Review reset again'} />
+            </Button>
           )}
         </Modal>
       )}

@@ -1,8 +1,8 @@
 /** Public pipeline settings; credentials never belong in this metadata. */
 export const readerBuild = {
-  root: 'infrastructure/cloud/site',
-  build: 'npm --prefix ../../.. ci && npm --prefix ../../.. run cloud:build:site',
-  deploy: 'npm --prefix ../../.. run cloud:deploy:site',
+  root: 'infrastructure/cloud/studio',
+  build: 'npm --prefix ../../.. ci && npm --prefix ../../.. run cloud:build:studio',
+  deploy: 'npm --prefix ../../.. run cloud:deploy:studio',
 } as const;
 export type CloudOperation = {
   id: string;
@@ -24,6 +24,7 @@ export type CloudStatus = {
   buildsConfigured: boolean;
   accountId?: string;
   siteWorker?: string;
+  studioWorker?: string;
   files: number;
   bytes: number;
   budgetBytes: number;

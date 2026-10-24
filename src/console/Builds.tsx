@@ -6,7 +6,7 @@ import { routesForEntry } from '../shared/collections.js';
 import type { SelectedItem } from '../shared/operations.js';
 import { formatBytes } from '../shared/media-details.js';
 import { Button, Icon, EmptyState } from '../shared/ui.js';
-import { send } from './api.js';
+import { send, isCloudStudio } from './api.js';
 import { PageHeading, ErrorBox, JobStatus } from './components.js';
 import { BuildProgress } from './BuildProgress.js';
 import { elapsedTime } from './build-progress.js';
@@ -24,7 +24,12 @@ import './build-history.css';
 const terminal = (job: Job) => ['succeeded', 'failed'].includes(job.state);
 const timestamp = (value: string) =>
   new Date(value).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-const title = (job: Job) => (job.action === 'publish' ? 'Build & publish' : 'Static site build');
+const title = (job: Job) =>
+  job.action === 'publish'
+    ? t('Build & publish')
+    : isCloudStudio()
+      ? t('Source validation')
+      : t('Static site build');
 function saveReport(value: unknown) {
   const url = URL.createObjectURL(
     new Blob([JSON.stringify(value, null, 2)], { type: 'application/json' }),
@@ -146,7 +151,7 @@ export function Builds({
         )}
       >
         <Button icon="Play" disabled={active || starting} onClick={() => void run('build')}>
-          <UiText message={'Build site'} />
+          {isCloudStudio() ? t('Check source') : <UiText message={'Build site'} />}
         </Button>
         <Button
           variant="primary"
@@ -650,6 +655,11 @@ export function Builds({
                             disabled={!!busy || !selected}
                             onClick={() =>
                               void task('artifact', async () => {
+                                if (cloud) {
+                                  const { downloadCloudBackup } = await import('./cloud-backup.js');
+                                  await downloadCloudBackup(job.id, 'artifact');
+                                  return;
+                                }
                                 const result = await send<{ url: string }>(
                                   `jobs/${job.id}/artifact`,
                                   'POST',

@@ -51,6 +51,20 @@ async function setup() {
   } as unknown as CloudEnv;
   return env;
 }
+async function approvedFixture(env: CloudEnv, id: string) {
+  const ws = await new CloudWorkspace(env).load();
+  for (const name of ['site.json', 'library.json'])
+    ws.write('content/' + name, await fs.readFile('tests/fixtures/notebook/' + name));
+  await ws.commit('fixture');
+  const key = 'jobs/approved-fixture/manifest.json';
+  await env.BUCKET.put(key, JSON.stringify(ws.manifest()));
+  await env.DB.prepare(
+    'INSERT INTO cloud_releases(id,version,manifest_key,created,state) VALUES(?,?,?,?,?)',
+  )
+    .bind(id, ws.version, key, new Date().toISOString(), 'approved')
+    .run();
+  await env.DB.prepare('UPDATE cloud_control SET approved_release=? WHERE id=1').bind(id).run();
+}
 it('captures only routine job files and retained transfer metadata, with exact artifact and reset exceptions', async () => {
   const env = await setup();
   const paths = [
@@ -83,9 +97,7 @@ it('triggers one approved release after the quota reset and never retries an unc
   const env = await setup();
   env.BUILDS_DEPLOY_HOOK =
     'https://api.cloudflare.com/client/v4/workers/builds/deploy_hooks/fixture';
-  await env.DB.prepare(
-    "UPDATE cloud_control SET approved_release='approved-fixture' WHERE id=1",
-  ).run();
+  await approvedFixture(env, 'approved-fixture');
   const now = new Date('2026-10-23T19:00:00Z');
   const queued = await deferApprovedBuild(env, now);
   expect(queued.after).toBe('2026-10-24T00:05:00.000Z');
@@ -120,7 +132,7 @@ it('retains an uncertain deferred trigger without automatic retries', async () =
   const env = await setup();
   env.BUILDS_DEPLOY_HOOK =
     'https://api.cloudflare.com/client/v4/workers/builds/deploy_hooks/fixture';
-  await env.DB.prepare("UPDATE cloud_control SET approved_release='approved' WHERE id=1").run();
+  await approvedFixture(env, 'approved');
   const record = await deferApprovedBuild(env, new Date('2026-10-23T19:00:00Z'));
   let calls = 0;
   const failed: typeof fetch = async () => {

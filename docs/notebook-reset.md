@@ -1,6 +1,12 @@
 # Reset notebook data
 
-Studio → Site settings → Local Studio → **Review data reset** prepares a reset that keeps site settings. Flush active site, connection and launcher edits before preparing the review. The review names the site, counts the affected data, lists retained site media and offers a recovery download. Its destructive action requires the exact text `RESET`.
+Studio → Site settings → **Reset notebook data** → **Review data reset** prepares a reset that keeps site settings. Flush active site, connection and launcher edits before preparing the review. The review names the site, counts the affected data, lists retained site media and offers a recovery download. Its destructive action requires the exact text `RESET`. Preparing a fresh review clears that confirmation immediately and blocks downloads until the new recovery copy is ready.
+
+## Hosted reset
+
+Hosted Studio retains an immutable reference snapshot, keeps settings, connections and their private artwork/originals, and clears authoring data through native version-checked D1/R2 staging. Previous backup references move to seven-day recovery. No CI build or public deployment starts, and the current public site remains available. Publish explicitly when the cleared notebook should replace it. Both the review and retained recovery links assemble a portable archive through the browser worker; a stored compressed archive is not required. Restore it in Backups. Shared physical blobs remain protected until all retained references expire or are reviewed and purged.
+
+## Local filesystem reset
 
 The reset clears all Writing/Lab Markdown, photo moments/albums/legacy news, About introduction, image publication choices, unused-by-settings media, Trash, revisions, collection Undo, About history, saved notebook backups, build history/artifacts, temporary imports/exports, renderer caches and reports. It rebuilds a validated empty public artifact locally, replacing old `dist/` routes and assets. It does not publish or remove anything from Cloudflare Pages, R2 or GitHub discussions.
 

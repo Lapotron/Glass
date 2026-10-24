@@ -8,9 +8,11 @@ import {
   type SearchImportReview,
 } from '../shared/search-console.js';
 export class SearchConsoleService {
-  private reviews = new Map<string, { review: SearchImportReview; previous: string }>();
   private queue: Promise<unknown> = Promise.resolve();
-  constructor(private root: string) {}
+  constructor(
+    private root: string,
+    private reviews = new Map<string, { review: SearchImportReview; previous: string }>(),
+  ) {}
   private get folder() {
     return path.join(this.root, '.studio/search-console');
   }

@@ -1,5 +1,5 @@
 import { CloudError, type CloudEnv } from './types.js';
-import { requestBuild } from './jobs.js';
+import { retryApprovedRelease } from './approved-retry.js';
 
 const key = 'runtime/deferred-approved-build.json';
 type Deferred = {
@@ -85,7 +85,7 @@ export async function runDeferredBuild(
   );
   if (!claim) return true;
   try {
-    const buildUuid = await requestBuild(env, { hook: env.BUILDS_DEPLOY_HOOK }, fetcher);
+    const buildUuid = await retryApprovedRelease(env, value.release, fetcher);
     await env.BUCKET.put(
       key,
       JSON.stringify({ ...value, state: 'triggered', buildUuid, updated: now.toISOString() }),

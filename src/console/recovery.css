@@ -404,7 +404,7 @@
 .backup-transfer-heading > svg {
   color: var(--accent-text);
 }
-.backup-transfer progress {
+:is(.backup-transfer, .hosting-progress, .cloud-backup-dialog, .cloud-storage) progress {
   width: 100%;
   height: 6px;
   border: 0;
@@ -413,15 +413,18 @@
   accent-color: var(--accent);
   background: var(--inset-bg);
 }
-.backup-transfer progress::-webkit-progress-bar {
+:is(.backup-transfer, .hosting-progress, .cloud-backup-dialog, .cloud-storage)
+  progress::-webkit-progress-bar {
   background: var(--inset-bg);
   border-radius: 6px;
 }
-.backup-transfer progress::-webkit-progress-value {
+:is(.backup-transfer, .hosting-progress, .cloud-backup-dialog, .cloud-storage)
+  progress::-webkit-progress-value {
   background: linear-gradient(90deg, var(--accent), var(--accent-text));
   border-radius: 6px;
 }
-.backup-transfer progress::-moz-progress-bar {
+:is(.backup-transfer, .hosting-progress, .cloud-backup-dialog, .cloud-storage)
+  progress::-moz-progress-bar {
   background: var(--accent);
   border-radius: 6px;
 }

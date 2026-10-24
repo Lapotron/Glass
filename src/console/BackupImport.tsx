@@ -3,7 +3,11 @@ import { Button, Icon } from '../shared/ui.js';
 import { t } from '../shared/i18n.js';
 import { UiText } from '../shared/UiText.js';
 import { formatBytes } from '../shared/media-details.js';
-import { LARGE_BACKUP_BYTES, type BackupUpload } from '../shared/backup-transfer.js';
+import {
+  LARGE_BACKUP_BYTES,
+  LARGE_BACKUP_EXPANDED_BYTES,
+  type BackupUpload,
+} from '../shared/backup-transfer.js';
 import type { RestoreReview } from '../engine/backup.js';
 import { api, ApiError, isCloudStudio, workspacePreferenceKey } from './api.js';
 import { ErrorBox, Field } from './components.js';
@@ -72,8 +76,15 @@ export function BackupImport({
     } catch {}
   };
   async function upload(chosen: File, retryValidation = false) {
-    if (chosen.size < 1 || chosen.size > LARGE_BACKUP_BYTES) {
-      setError(t('Choose a notebook archive up to 4 GiB.'));
+    const maximum = isCloudStudio()
+      ? LARGE_BACKUP_EXPANDED_BYTES + 64 * 1024 ** 2
+      : LARGE_BACKUP_BYTES;
+    if (chosen.size < 1 || chosen.size > maximum) {
+      setError(
+        isCloudStudio()
+          ? t('Choose a hosted notebook archive up to 8 GiB plus archive metadata.')
+          : t('Choose a notebook archive up to 4 GiB.'),
+      );
       return;
     }
     const abort = new AbortController();
@@ -82,6 +93,22 @@ export function BackupImport({
     setError('');
     setPhase('uploading');
     setFile(chosen);
+    if (isCloudStudio()) {
+      try {
+        const { importCloudBackup } = await import('./cloud-backup.js');
+        const review = await importCloudBackup(chosen, {
+          signal: abort.signal,
+          progress: (bytes) => setDone(bytes),
+        });
+        onReview(review);
+        uploadedReview.current = review.id;
+        setPhase('complete');
+      } catch (error) {
+        if ((error as Error).name !== 'AbortError') setError((error as Error).message);
+        setPhase('paused');
+      }
+      return;
+    }
     try {
       const signature = await fingerprint(chosen);
       let current: BackupUpload | undefined;
@@ -105,20 +132,6 @@ export function BackupImport({
         }
       }
       if (!current) {
-        if (isCloudStudio()) {
-          const status = await api<any>('cloud/status', options);
-          if (!status.buildsConfigured)
-            throw new Error(
-              t('Connect the reader Deploy Hook in Hosting before importing an archive.'),
-            );
-          const available = status.budgetBytes - (status.physicalStorage?.bytes || 0);
-          if (chosen.size > available)
-            throw new Error(
-              t(
-                'The archive exceeds available private storage. Review the storage budget in Hosting first.',
-              ),
-            );
-        }
         current = await api<BackupUpload>('backups/uploads', {
           ...options,
           method: 'POST',
@@ -200,7 +213,13 @@ export function BackupImport({
   return (
     <div className="backup-import">
       <p className="help">
-        <UiText message="Import .tar.gz large archives or existing .json.gz backups. Uploads use checked 8 MiB parts and can resume for 24 hours." />
+        {isCloudStudio()
+          ? t(
+              'Import .tar.gz or .json.gz directly. Checked transfers resume for seven idle days; your notebook changes only after review.',
+            )
+          : t(
+              'Import .tar.gz large archives or existing .json.gz backups. Uploads use checked 8 MiB parts and can resume for 24 hours.',
+            )}
       </p>
       <Field label={t('Notebook backup')}>
         <input

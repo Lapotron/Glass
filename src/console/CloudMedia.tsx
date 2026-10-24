@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { t, uiNumber } from '../shared/i18n.js';
 import { Button, Icon } from '../shared/ui.js';
 import { Modal, ErrorBox } from './components.js';
-import { api, send } from './api.js';
+import { api, send, isCloudStudio } from './api.js';
 import type { CloudMediaInventory, CloudMediaReview } from '../shared/cloud-media.js';
 export function CloudMedia({ onClose }: { onClose: () => void }) {
   const [inventory, setInventory] = useState<CloudMediaInventory>(),
@@ -54,6 +54,13 @@ export function CloudMedia({ onClose }: { onClose: () => void }) {
           'Inspect content duplicates and storage use. Published URLs and every retained artifact stay protected. Cloud cleanup is separate from publication.',
         )}
       </p>
+      {isCloudStudio() && (
+        <p className="help">
+          {t(
+            'Public CDN scans and reviewed cleanup run as explicit pipeline maintenance. They do not build or deploy the site. Ordinary uploads use private storage directly.',
+          )}
+        </p>
+      )}
       <ErrorBox error={error} />
       {notice && <p role="status">{notice}</p>}
       {!inventory && (

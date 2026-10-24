@@ -121,7 +121,7 @@ export async function checkCloudflareConnection(
       : !verified
         ? {
             error:
-              'Could not verify Pages access. Check the account and Cloudflare Pages permissions. Hosted Studio publishes through its connected reader Worker; manage that target in Hosting.',
+              'Could not verify Pages access. Check the account and Cloudflare Pages Edit permission. Configure the Direct Upload target in Hosting.',
           }
         : {}),
   };

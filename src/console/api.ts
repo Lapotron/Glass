@@ -24,7 +24,9 @@ export type Bootstrap = {
 };
 let sessionToken = '';
 let cloudRuntime = false;
+let backupDownloadsInstalled = false;
 export const isCloudStudio = () => cloudRuntime;
+export const cloudSessionToken = () => sessionToken;
 let workspaceId = '';
 let refreshingSession: Promise<Bootstrap> | undefined;
 export const workspacePreferenceKey = (name: string) =>
@@ -37,21 +39,24 @@ export class ApiError extends Error {
     super(message);
   }
 }
-export type CloudJobProgress = { id: string; state: string };
+export type CloudJobProgress = { id: string; state: string; bytes?: number; totalBytes?: number };
 export type ApiOptions = RequestInit & {
   onCloudProgress?: (progress: CloudJobProgress) => void;
 };
 export async function api<T = any>(url: string, options: ApiOptions = {}): Promise<T> {
   const { onCloudProgress, ...requestOptions } = options;
   const form = options.body instanceof FormData;
+  if (
+    cloudRuntime &&
+    options.method === 'POST' &&
+    (url === 'media' || /^media\/[a-f0-9-]+\/variants$/.test(url))
+  ) {
+    const { uploadCloudMedia } = await import('./cloud-media-upload.js');
+    return uploadCloudMedia(url, options) as Promise<T>;
+  }
   if (cloudRuntime && /^media\/(?:[a-f0-9-]+\/)?inspect$/.test(url)) {
     const { inspectCloudImage } = await import('./cloud-image.js');
-    try {
-      return (await inspectCloudImage(url, options)) as T;
-    } catch (error) {
-      if ((error as Error).name === 'AbortError')
-        throw error; /* Uncommon image codecs can use the CI inspector below. */
-    }
+    return (await inspectCloudImage(url, options)) as T;
   }
   if (
     cloudRuntime &&
@@ -147,6 +152,8 @@ export async function api<T = any>(url: string, options: ApiOptions = {}): Promi
         }
       }
     }
+    if (response.status === 202 && data.nativeOperation)
+      return completeNativeOperation(data.nativeOperation, options);
     if (!response.ok)
       throw new ApiError(
         t(
@@ -155,8 +162,35 @@ export async function api<T = any>(url: string, options: ApiOptions = {}): Promi
         ),
         response.status,
       );
+    if (cloudRuntime && data.legacyBackup) {
+      const { importCloudBackup } = await import('./cloud-backup.js');
+      return importCloudBackup(data.legacyBackup, {
+        signal: options.signal || new AbortController().signal,
+        progress: (bytes) =>
+          options.onCloudProgress?.({
+            id: data.legacyBackup.id,
+            state: 'checking',
+            bytes,
+            totalBytes: data.legacyBackup.bytes,
+          }),
+      }) as Promise<T>;
+    }
     if (data.runtime?.mode === 'cloud') {
       cloudRuntime = true;
+      if (!backupDownloadsInstalled) {
+        backupDownloadsInstalled = true;
+        document.addEventListener('click', (event) => {
+          if (event.defaultPrevented || !(event.target instanceof Element)) return;
+          const link = event.target.closest<HTMLAnchorElement>('a[download]'),
+            url = link && new URL(link.href, location.href),
+            match =
+              url?.origin === location.origin &&
+              /^\/api\/backups\/([\w-]+)\/download$/.exec(url.pathname);
+          if (!match) return;
+          event.preventDefault();
+          void import('./cloud-backup.js').then((module) => module.downloadCloudBackup(match[1]));
+        });
+      }
       const { setCloudPreviewModel } = await import('./cloud-preview.js');
       setCloudPreviewModel(data);
       const { cloudReaderLinks } = await import('./cloud-links.js');
@@ -167,6 +201,25 @@ export async function api<T = any>(url: string, options: ApiOptions = {}): Promi
     return data;
   };
   return request(true);
+}
+export async function completeNativeOperation(id: string, options: ApiOptions = {}): Promise<any> {
+  const base = 'cloud/operations/' + id,
+    plan = await api(base, { signal: options.signal });
+  if (plan.state === 'complete') return plan.result;
+  options.onCloudProgress?.({ id, state: 'uploading' });
+  // Each staged request stays inside the free Worker limit. Visibility changes once, at commit.
+  for (const file of plan.files) {
+    options.signal?.throwIfAborted();
+    if (file.data === null) continue;
+    const value = Uint8Array.from(atob(file.data), (char) => char.charCodeAt(0));
+    await api(base + '/file?' + new URLSearchParams({ path: file.path }), {
+      method: 'PUT',
+      body: new Blob([value]),
+      headers: { 'Content-Type': 'application/octet-stream' },
+      signal: options.signal,
+    });
+  }
+  return api(base + '/commit', { method: 'POST', body: '{}', signal: options.signal });
 }
 export const send = <T = any>(
   url: string,

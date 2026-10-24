@@ -49,6 +49,8 @@ export type CloudEnv = {
   SITE_ORIGIN: string;
   SITE_STAGING_ORIGIN?: string;
   SITE_WORKER?: string;
+  STUDIO_WORKER?: string;
+  PAGES_PROJECT?: string;
   PRODUCTION_BRANCH?: string;
   WORKSPACE_ID: string;
   CLOUDFLARE_ACCOUNT_ID: string;

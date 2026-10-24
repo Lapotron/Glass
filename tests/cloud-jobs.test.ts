@@ -3,7 +3,7 @@ import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { cloudSchemaStatements } from '../scripts/cloud-schema.js';
 import { claimBuild, enqueue, trigger, type CloudJob } from '../src/cloud/jobs.js';
 import { CloudWorkspace } from '../src/cloud/workspace.js';
-import { CloudError, type CloudEnv, type FileRecord } from '../src/cloud/types.js';
+import { type CloudEnv, type FileRecord } from '../src/cloud/types.js';
 
 const instances: Miniflare[] = [];
 const now = '2026-10-24T00:00:00.000Z';
@@ -94,15 +94,6 @@ async function active(env: CloudEnv) {
     ).all<CloudJob>()
   ).results;
 }
-async function index(env: CloudEnv, id: string) {
-  return (
-    await env.DB.prepare(
-      'SELECT path,sha,encrypted FROM cloud_job_files WHERE job_id=? ORDER BY path',
-    )
-      .bind(id)
-      .all<Pick<FileRecord, 'path' | 'sha' | 'encrypted'>>()
-  ).results;
-}
 
 it.each(['queued', 'running'])(
   'rejects an unmatched retry while another job is %s without creating a job or touching its snapshot',
@@ -132,83 +123,27 @@ it('waits only for an unregistered queued request and never steals it', async ()
   expect((await active(env))[0].build_uuid).toBeNull();
 });
 
-it('requires the first publication to be approved before a code rebuild can create a job', async () => {
+it('never turns a Git push into a public deployment, before or after an approved release', async () => {
   const env = await setup();
-  await expect(claimBuild(env, 'push-build', 'commit', 'main')).rejects.toMatchObject({
-    status: 409,
-    message: expect.stringContaining('approve its first release'),
+  await expect(claimBuild(env, 'git-build', 'commit', 'main')).rejects.toMatchObject({
+    status: 404,
+  });
+  await approve(env);
+  await expect(claimBuild(env, 'git-build', 'commit', 'main')).rejects.toMatchObject({
+    status: 404,
   });
   expect(await active(env)).toEqual([]);
+  expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM cloud_jobs').first('n')).toBe(1);
 });
-
-it('atomically captures the approved content and exact refreshed operational bytes, even during a settings save', async () => {
+it('returns the same captured job for concurrent matching claims without creating another release', async () => {
   const env = await setup();
-  await approve(env);
-  for (const entry of [
-    file('content/posts/unapproved.md', 'unapproved-content'),
-    file('.studio/connections.json', 'current-credentials', 1),
-    file('.studio/services/aca.json', 'current-service', 1),
-  ])
-    await env.DB.prepare('INSERT INTO cloud_files VALUES(?,?,?,?,?,?)')
-      .bind(entry.path, entry.sha, entry.bytes, entry.modified, entry.text, entry.encrypted)
-      .run();
-  interceptBucket(env, 'put', async (key) => {
-    if (key.endsWith('/manifest.json'))
-      await env.DB.prepare(
-        "UPDATE cloud_files SET sha='newer-credentials' WHERE path='.studio/connections.json'",
-      ).run();
-  });
-  const claimed = await claimBuild(env, 'push-build', 'commit', 'main');
-  expect(claimed.job).toMatchObject({ state: 'running', commit_sha: 'commit', version: 7 });
-  const expected = [
-    { path: '.studio/connections.json', sha: 'current-credentials', encrypted: 1 },
-    { path: '.studio/services/aca.json', sha: 'current-service', encrypted: 1 },
-    { path: 'content/posts/published.md', sha: 'published-content', encrypted: 0 },
-  ];
-  expect(await index(env, claimed.job.id)).toEqual(expected);
-  expect(
-    claimed.manifest.files
-      .map(({ path, sha, encrypted }) => ({ path, sha, encrypted }))
-      .sort((a, b) => a.path.localeCompare(b.path)),
-  ).toEqual(expected);
-  expect(claimed.manifest.files.some((entry) => entry.sha === 'unapproved-content')).toBe(false);
-});
-
-it('lets only one of two competing GitHub builds create a complete job and reports a recoverable conflict', async () => {
-  const env = await setup();
-  await approve(env);
-  const meet = barrier();
-  interceptBucket(env, 'get', async (key) => {
-    if (key === 'jobs/source/manifest.json') await meet();
-  });
-  const results = await Promise.allSettled([
-    claimBuild(env, 'push-one', 'commit-one', 'main'),
-    claimBuild(env, 'push-two', 'commit-two', 'main'),
+  await insertJob(env, 'captured', 'queued', 'publish-build');
+  const [a, b] = await Promise.all([
+    claimBuild(env, 'publish-build', 'commit', 'main'),
+    claimBuild(env, 'publish-build', 'commit', 'main'),
   ]);
-  expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
-  const rejected = results.find((result) => result.status === 'rejected');
-  expect(rejected?.status === 'rejected' && rejected.reason).toBeInstanceOf(CloudError);
-  expect(rejected?.status === 'rejected' && rejected.reason.status).toBe(409);
-  expect(await active(env)).toHaveLength(1);
-  expect(await index(env, (await active(env))[0].id)).toEqual([
-    { path: 'content/posts/published.md', sha: 'published-content', encrypted: 0 },
-  ]);
-});
-
-it('returns the same job for concurrent duplicate claims of one build UUID', async () => {
-  const env = await setup();
-  await approve(env);
-  const meet = barrier();
-  interceptBucket(env, 'get', async (key) => {
-    if (key === 'jobs/source/manifest.json') await meet();
-  });
-  const [first, second] = await Promise.all([
-    claimBuild(env, 'same-build', 'same-commit', 'main'),
-    claimBuild(env, 'same-build', 'same-commit', 'main'),
-  ]);
-  expect(first.job.id).toBe(second.job.id);
-  expect(first.job.state).toBe('running');
-  expect(second.job.state).toBe('running');
+  expect(a.job.id).toBe('captured');
+  expect(b.job.id).toBe('captured');
   expect(await active(env)).toHaveLength(1);
 });
 
@@ -241,21 +176,23 @@ it('recognizes its own build registered between the initial lookup and the activ
   expect(await active(env)).toHaveLength(1);
 });
 
-it('rolls back a new job if its snapshot authorization index cannot be written', async () => {
-  const env = await setup();
-  await approve(env);
+it('rolls back a captured Publish request when its authorization index cannot be written', async () => {
+  const env = await setup(),
+    workspace = await new CloudWorkspace(env).load();
   await env.DB.exec(
-    "CREATE TRIGGER fixture_index_failure BEFORE INSERT ON cloud_job_files WHEN NEW.job_id!='source' BEGIN SELECT RAISE(ABORT,'fixture index failure'); END",
+    "CREATE TRIGGER fixture_index_failure BEFORE INSERT ON cloud_jobs BEGIN SELECT RAISE(ABORT,'fixture capture failure'); END",
   );
-  await expect(claimBuild(env, 'push-build', 'commit', 'main')).rejects.toThrow(
-    'fixture index failure',
-  );
-  expect(await active(env)).toEqual([]);
-  expect(
-    await env.DB.prepare("SELECT COUNT(*) AS n FROM cloud_job_files WHERE job_id!='source'").first(
-      'n',
+  await expect(
+    enqueue(
+      new Request('https://studio.fixture.test/api/jobs', { method: 'POST' }),
+      env,
+      workspace,
+      { id: 'owner', email: 'owner@test.test' },
+      'publish',
     ),
-  ).toBe(0);
+  ).rejects.toThrow('fixture capture failure');
+  expect(await active(env)).toEqual([]);
+  expect(await env.DB.prepare('SELECT COUNT(*) AS n FROM cloud_releases').first('n')).toBe(0);
 });
 
 it('does not resurrect a cancelled job or collide with its replacement when cancellation races a claim', async () => {

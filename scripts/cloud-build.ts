@@ -62,6 +62,8 @@ if (mode === 'studio') {
     STUDIO_ORIGIN: process.env.GLASS_STUDIO_ORIGIN || 'https://console.example.com',
     SITE_ORIGIN: process.env.GLASS_SITE_ORIGIN || 'https://example.com',
     SITE_WORKER: process.env.GLASS_SITE_WORKER || 'glass-site',
+    STUDIO_WORKER: process.env.GLASS_STUDIO_WORKER || 'glass-studio',
+    PAGES_PROJECT: process.env.GLASS_PAGES_PROJECT || '',
     WORKSPACE_ID: process.env.GLASS_WORKSPACE_ID || 'glass',
     PRODUCTION_BRANCH: process.env.GLASS_PRODUCTION_BRANCH || 'main',
     SITE_STAGING_ORIGIN:

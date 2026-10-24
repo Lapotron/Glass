@@ -3,7 +3,7 @@ import { UiText } from '../shared/UiText.js';
 import { useEffect, useRef, useState } from 'react';
 import { Button, Icon } from '../shared/ui.js';
 import { attachmentAccept, attachmentFile, attachmentGroup } from '../shared/attachments.js';
-import { api, type MediaFile, type CloudJobProgress } from './api.js';
+import { api, isCloudStudio, type MediaFile, type CloudJobProgress } from './api.js';
 import { CloudUploadStatus } from './CloudUploadStatus.js';
 import { ErrorBox } from './components.js';
 export const attachmentTitle = (name: string) => name.replace(/-[a-f\d-]{36}(?=\.[^.]+$)/i, '');
@@ -24,7 +24,8 @@ export function FileLinkPicker({
     [limit, setLimit] = useState(50),
     [retry, setRetry] = useState(0);
   const alive = useRef(true),
-    input = useRef<HTMLInputElement>(null);
+    input = useRef<HTMLInputElement>(null),
+    aborter = useRef<AbortController>(null);
   useEffect(() => {
     let active = true;
     alive.current = true;
@@ -45,6 +46,7 @@ export function FileLinkPicker({
     return () => {
       active = false;
       alive.current = false;
+      aborter.current?.abort();
     };
   }, [retry]);
   const upload = async (file?: File) => {
@@ -56,12 +58,18 @@ export function FileLinkPicker({
       );
       return;
     }
-    if (file.size > 20 * 1024 * 1024) {
-      setError('Choose a file smaller than 20 MiB.');
+    if (file.size > (isCloudStudio() ? 4 * 1024 ** 3 : 20 * 1024 * 1024)) {
+      setError(
+        isCloudStudio()
+          ? 'Attachments support up to 4 GiB, subject to available transfer storage.'
+          : 'Choose a file smaller than 20 MiB.',
+      );
       return;
     }
     setUploading(true);
     setCloudProgress(undefined);
+    const controller = new AbortController();
+    aborter.current = controller;
     try {
       const form = new FormData();
       form.append('file', file);
@@ -69,6 +77,7 @@ export function FileLinkPicker({
         method: 'POST',
         body: form,
         onCloudProgress: setCloudProgress,
+        signal: controller.signal,
       });
       if (!alive.current) return;
       setFiles((previous) => [result, ...previous]);
@@ -217,7 +226,9 @@ export function FileLinkPicker({
       )}
       <p className="help" role="status">
         {filtered.length} {filtered.length === 1 ? t('file') : t('files')}{' '}
-        <UiText message={' · Uploads up to 20 MiB'} />
+        {isCloudStudio()
+          ? t(' · Up to 4 GiB, subject to available private transfer storage')
+          : t(' · Uploads up to 20 MiB')}
       </p>
     </div>
   );

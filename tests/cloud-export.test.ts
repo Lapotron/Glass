@@ -57,6 +57,12 @@ it('exports exact media with explicit private-setting scope and refuses an exist
       name = 'content/media/large-file.bin';
     await fs.writeFile(path.join(notebook, name), media);
     await fs.writeFile(path.join(notebook, 'content/media/_retained.bin'), 'Exact retained bytes');
+    await fs.writeFile(path.join(notebook, 'content/media/duplicate.bin'), 'Exact retained bytes');
+    await fs.mkdir(path.join(notebook, '.studio/builds/generated/public'), { recursive: true });
+    await fs.writeFile(
+      path.join(notebook, '.studio/builds/generated/public/large.js'),
+      randomBytes(1024 ** 2),
+    );
     await run(process.execPath, [
       '--import',
       'tsx',
@@ -68,19 +74,44 @@ it('exports exact media with explicit private-setting scope and refuses an exist
       destination,
     ]);
     const manifest = JSON.parse(await fs.readFile(path.join(destination, 'manifest.json'), 'utf8'));
+    expect(manifest.version).toBe(2);
+    expect(
+      manifest.files.find((file: any) => file.path === 'content/media/duplicate.bin').storagePath,
+    ).toBe(
+      manifest.files.find((file: any) => file.path === 'content/media/_retained.bin').storagePath,
+    );
+    expect(manifest.files.some((file: any) => file.path.startsWith('.studio/builds/'))).toBe(false);
     expect(manifest.files.find((file: any) => file.path === name)).toMatchObject({
       bytes: media.length,
       sha: createHash('sha256').update(media).digest('hex'),
     });
-    expect((await fs.readFile(path.join(destination, 'data', name))).equals(media)).toBe(true);
+    expect(
+      (
+        await fs.readFile(
+          path.join(
+            destination,
+            'data',
+            manifest.files.find((file: any) => file.path === name).storagePath,
+          ),
+        )
+      ).equals(media),
+    ).toBe(true);
     expect(
       manifest.files.find((file: any) => file.path === 'content/media/_retained.bin'),
     ).toMatchObject({
-      storagePath: 'content/media/__retained.bin',
+      storagePath: 'blobs/' + createHash('sha256').update('Exact retained bytes').digest('hex'),
       sha: createHash('sha256').update('Exact retained bytes').digest('hex'),
     });
     expect(
-      await fs.readFile(path.join(destination, 'data/content/media/__retained.bin'), 'utf8'),
+      await fs.readFile(
+        path.join(
+          destination,
+          'data',
+          manifest.files.find((file: any) => file.path === 'content/media/_retained.bin')
+            .storagePath,
+        ),
+        'utf8',
+      ),
     ).toBe('Exact retained bytes');
     expect(
       manifest.files.some(
@@ -114,7 +145,16 @@ it('exports exact media with explicit private-setting scope and refuses an exist
       '--include-private-settings',
     ]);
     expect(
-      await fs.readFile(path.join(restricted, 'data/private/connections.json'), 'utf8'),
+      await fs.readFile(
+        path.join(
+          restricted,
+          'data',
+          JSON.parse(await fs.readFile(path.join(restricted, 'manifest.json'), 'utf8')).files.find(
+            (file: any) => file.path === '.studio/connections.json',
+          ).storagePath,
+        ),
+        'utf8',
+      ),
     ).toContain('fixture-export-token');
     await expect(fs.stat(path.join(restricted, 'data/private/cloud/setup.json'))).rejects.toThrow();
   } finally {

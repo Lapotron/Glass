@@ -1,4 +1,4 @@
-/** Immediate crop inspection; authoritative transformations still run in the Node build job. */
+/** Immediate browser inspection. Prepared variants upload directly; production rendering stays in Node. */
 export async function inspectCloudImage(route: string, options: RequestInit) {
   options.signal?.throwIfAborted();
   let blob: Blob;

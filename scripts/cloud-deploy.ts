@@ -4,7 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { cloudFetch, uploadObject } from './cloud-client.js';
 import { progressReporter } from './cloud-progress.js';
-import { prepareSiteRoute } from './cloud-routing.js';
+import { PagesConnection } from '../src/cloud/pages.js';
 import { cloudMigrationsPending } from './cloud-migrations.js';
 import { hostedConnectionSecrets, withHostedSecrets } from './cloud-secrets.js';
 import { redactSecrets } from '../src/server/configuration.js';
@@ -68,40 +68,66 @@ if (target === 'studio') {
   }
   const progress = progressReporter(job.id);
   let result: any;
-  let undoFirstRoute = async () => {};
-  let verified = false;
   try {
     result = await (await cloudFetch('jobs/' + job.id + '/result')).json();
     const build = result.body.build as BuildResult;
     await cloudFetch('jobs/' + job.id + '/deploy-lease', { method: 'POST' });
     await progress.phase('uploading');
-    const settings = JSON.parse(await fs.readFile(config, 'utf8'));
-    undoFirstRoute = await prepareSiteRoute(settings.name);
-    const output = run(['deploy', '--config', config]);
+    const settings = JSON.parse(await fs.readFile(path.join(directory, 'pages.json'), 'utf8'));
+    if (settings.account !== process.env.CLOUDFLARE_ACCOUNT_ID)
+      throw new Error('The captured Pages account differs from this pipeline.');
+    const pages = new PagesConnection(settings.account, process.env.CLOUDFLARE_API_TOKEN!);
+    const project = await pages.get(settings.project);
+    if (!project)
+      throw new Error('Create the Direct Upload Pages project in Hosting before publishing.');
+    if (project.source)
+      throw new Error(
+        'The selected Pages project is Git-connected. Choose a Direct Upload project.',
+      );
+    const output = run([
+      'pages',
+      'deploy',
+      path.join(directory, 'public'),
+      '--project-name',
+      settings.project,
+      '--branch',
+      settings.branch,
+      '--commit-dirty=true',
+      ...(job.commit_sha ? ['--commit-hash', job.commit_sha] : []),
+    ]);
     progress.log(output);
-    const address =
-      process.env.GLASS_ENABLE_SITE_DOMAIN === 'true'
-        ? process.env.GLASS_SITE_ORIGIN
-        : process.env.GLASS_SITE_STAGING_ORIGIN;
+    const address = output.match(/https:\/\/[a-z0-9-]+\.[a-z0-9-]+\.pages\.dev\/?/gi)?.at(-1);
     if (!address)
-      throw new Error('Configure the exact staging hostname before deploying the reader Worker.');
+      throw new Error('Cloudflare returned no Pages deployment URL. Check Pages before retrying.');
     const deployment: PublishResult = {
       url: new URL(address).origin,
-      project: settings.name,
+      project: settings.project,
       buildId: build.id,
       completedAt: new Date().toISOString(),
     };
     result.body.deployment = deployment;
     await progress.phase('verifying-deployment');
     await verifyPublishedDeployment(deployment, build, fetch, {
-      workerOrigins: [deployment.url],
       onLog: (message) => progress.log(message),
     });
-    verified = true;
+    const domains = await pages.domains(settings.project);
+    const canonical = new URL(settings.canonical).origin;
+    const live = domains.some(
+      (domain: any) => domain.name === new URL(canonical).hostname && domain.status === 'active',
+    );
+    if (live)
+      await verifyPublishedDeployment({ ...deployment, url: canonical }, build, fetch, {
+        workerOrigins: [canonical],
+        onLog: (message) => progress.log(message),
+      });
     await cloudFetch('jobs/' + job.id + '/live', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url: deployment.url }),
+      body: JSON.stringify({
+        url: live ? canonical : deployment.url,
+        project: settings.project,
+        staged: !live,
+      }),
     });
     result.body.logs = [...(result.body.logs || []), ...progress.logs];
     await uploadObject(job.id, 'result.json', Buffer.from(JSON.stringify(result)));
@@ -113,12 +139,6 @@ if (target === 'studio') {
     });
   } catch (error) {
     progress.log((error as Error).message);
-    if (!verified)
-      await undoFirstRoute().catch(() =>
-        progress.log(
-          'Automatic route recovery could not be confirmed. Inspect the exact site route before retrying.',
-        ),
-      );
     await progress.close().catch(() => {});
     if (result)
       await uploadObject(job.id, 'result.json', Buffer.from(JSON.stringify(result))).catch(

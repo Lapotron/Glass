@@ -846,16 +846,16 @@ export function App() {
             <span className="topbar-separator" />
             <Button
               className="small build-header-button"
-              aria-label={t('Build')}
-              title={t('Build site')}
+              aria-label={data.runtime ? t('Check source') : t('Build')}
+              title={data.runtime ? t('Validate source without publishing') : t('Build site')}
               icon={active ? 'LoaderCircle' : 'Play'}
               disabled={active}
               onClick={() => {
                 void build('build');
               }}
             >
-              <span className="build-button-label" data-ui={'Build'}>
-                {t('Build')}
+              <span className="build-button-label">
+                {data.runtime ? t('Check source') : t('Build')}
               </span>
             </Button>
             <Button

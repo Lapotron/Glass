@@ -52,8 +52,15 @@ test('reviewed notebook reset keeps site settings, downloads recovery, rejects s
     await review.getByRole('button', { name: 'Reset notebook data', exact: true }).click();
     await expect(review.getByRole('alert')).toContainText('Nothing was reset');
     expect((await state(request)).entries.some((entry: any) => entry.id === changed.id)).toBe(true);
+    await page.route('**/api/notebook/reset/review', async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await route.continue();
+    });
     await review.getByRole('button', { name: 'Review reset again', exact: true }).click();
-    await expect(review.getByLabel('Type RESET to confirm', { exact: true })).toHaveValue('');
+    await expect(review.getByLabel('Type RESET to confirm', { exact: true })).toHaveValue('', {
+      timeout: 1000,
+    });
+    await expect(review.getByRole('link', { name: /Download recovery copy/ })).toBeDisabled();
     const nextDownload = page.waitForEvent('download');
     await review.getByRole('link', { name: /Download recovery copy/ }).click();
     archive = await fs.readFile((await (await nextDownload).path())!);

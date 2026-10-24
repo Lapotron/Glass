@@ -63,15 +63,18 @@ export type MarkdownImportReview = {
   entries: { name: string; title: string; slug: string; kind: ContentKind; warnings: string[] }[];
   expiresAt: string;
 };
+export type MarkdownImportPlan = {
+  review: MarkdownImportReview;
+  entries: { metadata: EntryMeta; body: string; kind: ContentKind; file: string }[];
+};
 export class Operations {
-  private imports = new Map<
-    string,
-    {
-      review: MarkdownImportReview;
-      entries: { metadata: EntryMeta; body: string; kind: ContentKind; file: string }[];
-    }
-  >();
-  constructor(readonly store: Store) {}
+  private imports: Map<string, MarkdownImportPlan>;
+  constructor(
+    readonly store: Store,
+    imports?: Map<string, MarkdownImportPlan>,
+  ) {
+    this.imports = imports || new Map();
+  }
   discardReviews() {
     this.imports.clear();
   }
@@ -146,7 +149,9 @@ export class Operations {
             shortCode: digest(id).slice(0, 12),
             shortAliases: [],
             routeAliases: [],
-            discussion: entry.discussion ? {...entry.discussion,articleTerm:undefined} : undefined,
+            discussion: entry.discussion
+              ? { ...entry.discussion, articleTerm: undefined }
+              : undefined,
           });
           const raw = serializeEntry(metadata, entry.body);
           changes.push({
@@ -158,19 +163,44 @@ export class Operations {
           continue;
         }
         let metadata: EntryMeta = { ...entry };
-        let nextKind=entry.kind, nextFile=entry.file;
-        if(input.action==='convert') {
-          if(!input.targetKind)throw new Error('Choose a destination collection.');
-          if(input.targetKind===entry.kind){updated.push(entry);continue;}
-          nextKind=input.targetKind;
-          const slug=input.slugs?.[entry.id]||entry.slug;
-          nextFile=slug+'.md';
-          const destination=routeFor({kind:nextKind,slug},model.site.collections);
-          metadata={...metadata,slug,routeAliases:[...new Set([...entry.routeAliases,...retainedEntryRoutes(entry,model.site.collections)])].filter(route=>route!==destination),discussion:{...entry.discussion,articleTerm:entry.discussion?.articleTerm||routeFor(entry)}};
-          if(occupied.has(nextKind+'/'+slug.toLowerCase())||files.has(nextKind+'/'+nextFile)) {
-            issues.push({id:entry.id,message:`${entry.title}: destination URL or filename is already in use. Choose a different slug.`});continue;
+        let nextKind = entry.kind,
+          nextFile = entry.file;
+        if (input.action === 'convert') {
+          if (!input.targetKind) throw new Error('Choose a destination collection.');
+          if (input.targetKind === entry.kind) {
+            updated.push(entry);
+            continue;
           }
-          occupied.add(nextKind+'/'+slug.toLowerCase());files.add(nextKind+'/'+nextFile);
+          nextKind = input.targetKind;
+          const slug = input.slugs?.[entry.id] || entry.slug;
+          nextFile = slug + '.md';
+          const destination = routeFor({ kind: nextKind, slug }, model.site.collections);
+          metadata = {
+            ...metadata,
+            slug,
+            routeAliases: [
+              ...new Set([
+                ...entry.routeAliases,
+                ...retainedEntryRoutes(entry, model.site.collections),
+              ]),
+            ].filter((route) => route !== destination),
+            discussion: {
+              ...entry.discussion,
+              articleTerm: entry.discussion?.articleTerm || routeFor(entry),
+            },
+          };
+          if (
+            occupied.has(nextKind + '/' + slug.toLowerCase()) ||
+            files.has(nextKind + '/' + nextFile)
+          ) {
+            issues.push({
+              id: entry.id,
+              message: `${entry.title}: destination URL or filename is already in use. Choose a different slug.`,
+            });
+            continue;
+          }
+          occupied.add(nextKind + '/' + slug.toLowerCase());
+          files.add(nextKind + '/' + nextFile);
         } else if (input.action === 'status') {
           if (!input.status) throw new Error('Choose the status for the selected entries.');
           metadata = {
@@ -223,10 +253,16 @@ export class Operations {
               reason: 'batch',
             }),
           },
-          ...(nextKind===entry.kind ? [{file:target,value:raw,expected:entry.revision}] : [
-            {file:path.join(this.store.content,nextKind,nextFile),value:raw,expected:null},
-            {file:target,value:null,expected:entry.revision},
-          ]),
+          ...(nextKind === entry.kind
+            ? [{ file: target, value: raw, expected: entry.revision }]
+            : [
+                {
+                  file: path.join(this.store.content, nextKind, nextFile),
+                  value: raw,
+                  expected: null,
+                },
+                { file: target, value: null, expected: entry.revision },
+              ]),
         );
         updated.push(parseEntry(raw, nextKind, nextFile));
       }
@@ -236,7 +272,13 @@ export class Operations {
         ...model.entries.filter((entry) => input.action === 'duplicate' || !ids.has(entry.id)),
         ...updated,
       ]);
-      validateEntryRoutes([...model.entries.filter(entry=>input.action==='duplicate'||!ids.has(entry.id)),...updated],model.site.collections);
+      validateEntryRoutes(
+        [
+          ...model.entries.filter((entry) => input.action === 'duplicate' || !ids.has(entry.id)),
+          ...updated,
+        ],
+        model.site.collections,
+      );
       await commitFiles(this.store.root, changes);
       return { entries: updated.map(publicEntry), trashed };
     });
@@ -375,7 +417,7 @@ export class Operations {
       }
       if (issues.length) throw new OperationConflict(issues);
       validateShortLinks([...model.entries, ...restored]);
-      validateEntryRoutes([...model.entries,...restored],model.site.collections);
+      validateEntryRoutes([...model.entries, ...restored], model.site.collections);
       let library;
       if (restoredPhotos.length) {
         const photos: Photo[] = [...model.library.photos];
@@ -478,7 +520,7 @@ export class Operations {
         parseEntry(serializeEntry(entry.metadata, entry.body), entry.kind, entry.file),
       );
       validateShortLinks([...model.entries, ...entries]);
-      validateEntryRoutes([...model.entries,...entries],model.site.collections);
+      validateEntryRoutes([...model.entries, ...entries], model.site.collections);
       await commitFiles(
         this.store.root,
         plan.entries.map((entry) => ({

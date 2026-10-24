@@ -37,12 +37,11 @@ if (state && (state.owner !== owner || state.hostname !== hostname || state.acco
     'This notebook already has a different hosted setup. Preserve it and review the new target explicitly.',
   );
 state ||= {
-  version: 1,
+  version: 2,
   owner,
   hostname,
   account,
   worker: 'glass-studio',
-  siteWorker: 'glass-site',
   databaseName: 'glass-studio',
   bucket: 'glass-private',
   studioSecret: randomBytes(32).toString('hex'),
@@ -76,7 +75,7 @@ async function call(route: string, method = 'GET', body?: unknown) {
   return data.result;
 }
 const api = '/accounts/' + account;
-const [organization, zones, databases, buckets, apps, idps, subdomain] = await Promise.all([
+const [organization, zones, databases, buckets, apps, idps] = await Promise.all([
   call(api + '/access/organizations'),
   call(
     '/zones?name=' + new URL(site.url).hostname.replace(/^www\./, '') + '&account.id=' + account,
@@ -85,7 +84,6 @@ const [organization, zones, databases, buckets, apps, idps, subdomain] = await P
   call(api + '/r2/buckets'),
   call(api + '/access/apps'),
   call(api + '/access/identity_providers'),
-  call(api + '/workers/subdomain'),
 ]);
 if (zones.length !== 1 || !(hostname === zones[0].name || hostname.endsWith('.' + zones[0].name)))
   throw new Error(
@@ -93,7 +91,11 @@ if (zones.length !== 1 || !(hostname === zones[0].name || hostname.endsWith('.' 
   );
 state.team = String(organization.auth_domain).replace(/\.cloudflareaccess\.com$/, '');
 state.zoneId = zones[0].id;
-state.stagingOrigin = 'https://' + state.siteWorker + '.' + subdomain.subdomain + '.workers.dev';
+// Older installations retain their reader Worker rollback address; new setups use Pages.
+if (state.siteWorker) {
+  const subdomain = await call(api + '/workers/subdomain');
+  state.stagingOrigin = 'https://' + state.siteWorker + '.' + subdomain.subdomain + '.workers.dev';
+}
 const otp = idps.find((provider: any) => provider.type === 'onetimepin');
 if (!otp)
   throw new Error('Enable email one-time PIN in the existing Access organization before setup.');
@@ -205,12 +207,12 @@ const environment = {
   GLASS_D1_NAME: state.databaseName,
   GLASS_PRIVATE_BUCKET: state.bucket,
   GLASS_STUDIO_WORKER: state.worker,
-  GLASS_SITE_WORKER: state.siteWorker,
+  ...(state.siteWorker ? { GLASS_SITE_WORKER: state.siteWorker } : {}),
   GLASS_ENABLE_CUSTOM_DOMAIN: 'true',
   ACCESS_TEAM: state.team,
   ACCESS_AUD: state.audience,
   ACCESS_ADMINS: owner,
-  SITE_STAGING_ORIGIN: state.stagingOrigin,
+  ...(state.stagingOrigin ? { SITE_STAGING_ORIGIN: state.stagingOrigin } : {}),
 };
 function run(args: string[], input?: string) {
   const result = spawnSync(process.execPath, args, {
