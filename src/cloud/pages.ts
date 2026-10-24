@@ -9,7 +9,8 @@ export class PagesConnection {
       throw new CloudError('Save a Cloudflare account and API token first.');
   }
   async call(path: string, method = 'GET', body?: unknown, allowMissing = false): Promise<any> {
-    const response = await this.request(
+    const response = await this.request.call(
+      globalThis,
       'https://api.cloudflare.com/client/v4/accounts/' + this.account + '/pages/' + path,
       {
         method,
