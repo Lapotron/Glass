@@ -670,16 +670,6 @@ export function App() {
             {t('Studio')}
           </span>
         </a>
-        <div className="workspace-label">
-          <span className="workspace-avatar">{data.site.profile.name[0]}</span>
-          <div>
-            <strong data-ui={'Your personal space'}>{t('Your personal space')}</strong>
-            <small>
-              {data.runtime ? t('Private · Cloud workspace') : t('Private · Local workspace')}
-            </small>
-          </div>
-          <Icon name="ChevronDown" size={13} />
-        </div>
         <nav
           aria-label={t('Studio navigation')}
           data-ui-attrs={'{"aria-label":"Studio navigation"}'}

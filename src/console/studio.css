@@ -72,6 +72,7 @@
   padding: 0 8px;
   gap: 5px;
   flex-shrink: 0;
+  margin-bottom: 24px;
 }
 .studio-brand .brand {
   font-size: calc(19px * var(--font-scale));
@@ -85,45 +86,6 @@
   padding: 3px 5px;
   border: 1px solid var(--line);
   border-radius: 5px;
-}
-.workspace-label {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 28px 3px 22px;
-  padding: 13px 7px;
-  border-top: 1px solid var(--line);
-  border-bottom: 1px solid var(--line);
-  flex-shrink: 0;
-}
-.workspace-avatar {
-  width: 29px;
-  height: 29px;
-  border-radius: 10px;
-  background: var(--accent-soft);
-  color: var(--accent-text);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: calc(12px * var(--font-scale));
-  font-weight: 600;
-}
-.workspace-label > div {
-  flex: 1;
-}
-.workspace-label strong {
-  display: block;
-  font-size: calc(11px * var(--font-scale));
-  font-weight: 550;
-}
-.workspace-label small {
-  display: block;
-  font-size: calc(9px * var(--font-scale));
-  color: var(--faint);
-  margin-top: 2px;
-}
-.workspace-label > svg {
-  color: var(--faint);
 }
 .sidebar-group {
   margin-bottom: 26px;
@@ -2365,12 +2327,6 @@
   .sidebar-group > button {
     font-size: calc(11px * var(--font-scale));
   }
-  .workspace-label strong {
-    font-size: calc(10px * var(--font-scale));
-  }
-  .workspace-label small {
-    font-size: calc(8px * var(--font-scale));
-  }
   .studio-main {
     padding-left: 22px;
     padding-right: 22px;
@@ -3294,12 +3250,6 @@
   }
   .sidebar-group > button {
     font-size: calc(12px * var(--font-scale));
-  }
-  .workspace-label strong {
-    font-size: calc(11px * var(--font-scale));
-  }
-  .workspace-label small {
-    font-size: calc(9px * var(--font-scale));
   }
 }
 .home-slide-edit {
