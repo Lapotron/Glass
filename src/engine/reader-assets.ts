@@ -1,3 +1,4 @@
+import { publicAsset, validBasePath } from '../shared/public-path.js';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { digest } from './store.js';
@@ -76,9 +77,10 @@ export async function readReaderAssets(output: string): Promise<ReaderAssets> {
   const manifest = JSON.parse(contents) as ReaderAssets;
   if (
     manifest.version !== 1 ||
+    (manifest.basePath !== undefined && (typeof manifest.basePath !== 'string' || !validBasePath(manifest.basePath))) ||
     (manifest.search !== undefined &&
-      !/^\/assets\/bundles\/[a-f0-9]{20}\/chunks\/search-[\w-]+\.js$/.test(manifest.search)) ||
-    (manifest.chartModules !== undefined && !validChartModules(manifest.chartModules)) ||
+      !publicAsset(manifest.search, /^\/assets\/bundles\/[a-f0-9]{20}\/chunks\/search-[\w-]+\.js$/, manifest.basePath || '')) ||
+    (manifest.chartModules !== undefined && !validChartModules(manifest.chartModules, manifest.basePath || '')) ||
     ![
       'script',
       'style',
@@ -91,9 +93,7 @@ export async function readReaderAssets(output: string): Promise<ReaderAssets> {
       ...(manifest.archiveWorker !== undefined ? ['archiveWorker'] : []),
       ...(manifest.toolsScript !== undefined ? ['toolsScript'] : []),
     ].every((key) =>
-      /^\/assets\/bundles\/[a-f0-9]{20}\/[\w.-]+$/.test(
-        manifest[key as keyof ReaderAssets] as string,
-      ),
+      publicAsset(manifest[key as keyof ReaderAssets] as string, /^\/assets\/bundles\/[a-f0-9]{20}\/[\w.-]+$/, manifest.basePath || ''),
     )
   )
     throw new Error('The reader asset manifest is invalid. Build the site again.');

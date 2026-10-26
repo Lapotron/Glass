@@ -9,6 +9,7 @@ import {
   type ArchiveState,
   type ArchiveSelection,
 } from '../shared/archive.js';
+import { publicAsset } from '../shared/public-path.js';
 export type ArchiveRequest = {
   id: number;
   url?: string;
@@ -34,7 +35,7 @@ export function archiveDataSource() {
     loading ||= (async () => {
       let value: unknown = request.embedded;
       if (!value) {
-        if (!request.url || !/^\/assets\/archive\/catalog-[a-f0-9]{20}\.json$/.test(request.url))
+        if (!request.url || !publicAsset(request.url, /^\/assets\/archive\/catalog-[a-f0-9]{20}\.json$/))
           throw new Error('The archive catalog is unavailable.');
         const response = await fetch(request.url, { credentials: 'same-origin' });
         if (!response.ok) throw new Error('Could not load the archive catalog.');

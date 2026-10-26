@@ -4,14 +4,16 @@ import { routeFor, type SiteConfig } from '../shared/contracts.js';
 import type { RenderedEntry } from '../site/pages.js';
 import { escapeHtml } from '../shared/utils.js';
 import { footerCopyright } from '../shared/site-presentation.js';
+import { publicUrl } from '../shared/public-path.js';
 
 export async function writeFeeds(
   output: string,
   site: SiteConfig,
   entries: RenderedEntry[],
   version: string,
+  basePath = '',
 ) {
-  const url = site.url.replace(/\/$/, '');
+  const url = site.url.replace(/\/$/, '') + basePath;
   const title = site.feeds.title || site.name;
   const description = site.feeds.description || site.description;
   const selected = entries
@@ -62,7 +64,7 @@ export async function writeFeeds(
             summary: entry.summary,
             date_published: `${entry.publishedAt}T12:00:00.000Z`,
             date_modified: timestamp(entry),
-            ...(entry.cover ? { image: new URL(entry.cover, site.url).href } : {}),
+            ...(entry.cover ? { image: publicUrl(entry.cover, site.url, basePath) } : {}),
             tags: entry.tags,
             language: entry.lang,
           })),

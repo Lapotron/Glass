@@ -21,6 +21,7 @@ import { ProjectsPage } from './ProjectsPage.js';
 import { ToolsPage } from './ToolsPage.js';
 import { discussionThemePrefix } from '../engine/integrations.js';
 import { ArticleFooter } from './ArticleFooter.js';
+import { publicUrl } from '../shared/public-path.js';
 import path from 'node:path';
 import { ContactLink } from './ContactLink.js';
 import { ReaderSettings } from './ReaderSettings.js';
@@ -254,10 +255,14 @@ export async function createRenderer(
     readerAssets?: ReaderAssets;
     brandingVersion?: string;
     archiveThumbnails?: Map<string, { src: string; width: number; height: number }>;
+    publicBasePath?: string;
+    staticOnly?: boolean;
   } = {},
 ) {
   const includeDrafts = rendererOptions.includeDrafts === true;
   const isPreview = rendererOptions.preview === true;
+  const basePath = rendererOptions.publicBasePath || '';
+  const absolute = (value: string) => publicUrl(value, model.site.url, basePath);
   const { site, library } = model;
   const assets = rendererOptions.readerAssets || legacyReaderAssets;
   const entries: RenderedEntry[] = [];
@@ -276,7 +281,7 @@ export async function createRenderer(
           protectEmailLinks: site.profile.protectEmailLinks,
           entryId: entry.id,
           math: entry.math,
-          comments: resolveEntrySettings(site, entry).discussion.blocks,
+          comments: !rendererOptions.staticOnly && resolveEntrySettings(site, entry).discussion.blocks,
           preview: isPreview,
           diagrams,
           diagramPresentation: diagramStyle,
@@ -500,7 +505,7 @@ export async function createRenderer(
       layout?: 'listing';
     } = {},
   ) {
-    const canonical = new URL(current, site.url).href;
+    const canonical = absolute(current);
     const settings = options.article ? resolveEntrySettings(site, options.article) : undefined;
     const theme = settings?.theme || site.theme;
     const description = options.description || site.description;
@@ -531,17 +536,17 @@ export async function createRenderer(
                 author: {
                   '@type': 'Person',
                   name: site.profile.name,
-                  url: new URL('/about/', site.url).href,
+                  url: absolute('/about/'),
                 },
               }
             : {}),
-          ...(image ? { image: new URL(image, site.url).href } : {}),
+          ...(image ? { image: absolute(image) } : {}),
         }
       : {
           '@context': 'https://schema.org',
           '@type': 'WebSite',
-          '@id': new URL('/#website', site.url).href,
-          url: new URL('/', site.url).href,
+          '@id': absolute('/#website'),
+          url: absolute('/'),
           name: site.name,
           description: site.description,
           inLanguage: site.language,
@@ -551,6 +556,7 @@ export async function createRenderer(
       renderToStaticMarkup(
         <html
           lang="en"
+          data-site-base={basePath || undefined}
           data-content-language={language}
           data-ui-language-enabled={String(site.localization.enabled)}
           data-theme={site.theme.appearance === 'dark' ? 'dark' : 'light'}
@@ -625,7 +631,7 @@ export async function createRenderer(
             <meta property="og:type" content={options.article ? 'article' : 'website'} />
             <meta property="og:site_name" content={site.name} />
             <meta property="og:locale" content={socialLocale(site, language)} />
-            {image && <meta property="og:image" content={new URL(image, site.url).href} />}
+            {image && <meta property="og:image" content={absolute(image)} />}
             {image && imageAlt && <meta property="og:image:alt" content={imageAlt} />}
             <meta
               name="twitter:card"
@@ -639,7 +645,7 @@ export async function createRenderer(
             />
             <meta name="twitter:title" content={fullTitle} />
             <meta name="twitter:description" content={description} />
-            {image && <meta name="twitter:image" content={new URL(image, site.url).href} />}
+            {image && <meta name="twitter:image" content={absolute(image)} />}
             {image && imageAlt && <meta name="twitter:image:alt" content={imageAlt} />}
             {site.metadata.twitterSite && (
               <meta
@@ -681,7 +687,7 @@ export async function createRenderer(
                   }
                 />
                 {site.metadata.author && (
-                  <meta property="article:author" content={new URL('/about/', site.url).href} />
+                  <meta property="article:author" content={absolute('/about/')} />
                 )}
                 {options.article.tags.map((tag) => (
                   <meta key={tag} property="article:tag" content={tag} />
@@ -1304,7 +1310,7 @@ export async function createRenderer(
   }
   function article(entry: RenderedEntry) {
     const { reading, cover, discussion, seo } = resolveEntrySettings(site, entry);
-    const annotations = discussion.annotations;
+    const annotations = !rendererOptions.staticOnly && discussion.annotations;
     const outline = reading.outline
       ? entry.rendered.headings.filter((heading) => heading.level <= 3)
       : [];
@@ -1388,7 +1394,7 @@ export async function createRenderer(
               {!isPreview && (
                 <p className="article-print-source">
                   <UiText message={'Source: '} />
-                  {new URL(routeFor(entry, site.collections), site.url).href}
+                  {absolute(routeFor(entry, site.collections))}
                 </p>
               )}
               {!hasOutline && (
@@ -1469,7 +1475,7 @@ export async function createRenderer(
               aria-label={t('End of article')}
               data-ui-attrs={'{"aria-label":"End of article"}'}
             />
-            <ArticleFooter entry={entry} site={site} preview={isPreview} />
+            <ArticleFooter entry={entry} site={site} preview={isPreview} basePath={basePath} />
             <template data-article-margin-template>
               <button type="button" data-margin-fold>
                 <Icon name="ChevronRight" size={16} />

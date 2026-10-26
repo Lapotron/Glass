@@ -1,6 +1,7 @@
 import { t, setUiText } from '../shared/i18n.js';
 import { parseReadingRecords, readingStorageKey, type ReadingRecord } from '../shared/reading.js';
 import { indexTextBlocks, lineFragment } from './line-anchors.js';
+import { publicPath } from '../shared/public-path.js';
 type Entry = { id: string; title: string; url: string; revision: string };
 function read() {
   try {
@@ -213,7 +214,7 @@ export async function openReadingList(trigger: HTMLElement) {
   dialog.showModal();
   draw();
   try {
-    const response = await fetch('/assets/reading-catalog.json', {
+    const response = await fetch(publicPath('/assets/reading-catalog.json'), {
       credentials: 'omit',
       signal: AbortSignal.timeout(8000),
     });

@@ -1,7 +1,8 @@
+import { publicPath, logicalPath, readerBasePath } from '../shared/public-path.js';
 import { watchArchivePosition } from '../shared/archive-position.js';
 import {
-  archiveHref,
-  archivePageNumber,
+  archiveHref as logicalArchiveHref,
+  archivePageNumber as logicalArchivePageNumber,
   archiveState,
   type ArchiveCatalog,
   type ArchiveState,
@@ -16,6 +17,9 @@ import {
   type ArchiveRequest,
   type ArchiveResult,
 } from './archive-data.js';
+
+const archiveHref = (...args: Parameters<typeof logicalArchiveHref>) => publicPath(logicalArchiveHref(...args));
+const archivePageNumber = (path: string) => logicalArchivePageNumber(logicalPath(path));
 
 export function startArchive(browser: HTMLElement) {
   const search = browser.querySelector<HTMLInputElement>('[data-timeline-search]')!;
@@ -129,8 +133,8 @@ export function startArchive(browser: HTMLElement) {
     if (topicsOnly) return;
     lastResult = result;
     page = result.page.page;
-    results.innerHTML = archiveTimelineHtml(result.page, result.labels, state);
-    pagination.innerHTML = archivePaginationHtml(result.page, state);
+    results.innerHTML = archiveTimelineHtml(result.page, result.labels, state, false, readerBasePath());
+    pagination.innerHTML = archivePaginationHtml(result.page, state, readerBasePath());
     setUiText(
       browser.querySelector<HTMLElement>('[data-timeline-count]')!,
       result.page.total === 1 ? '{value0} published entry' : '{value0} published entries',

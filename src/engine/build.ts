@@ -26,6 +26,8 @@ import { stageReaderAssets } from './reader-assets.js';
 import { resolveResponsiveImages } from './responsive-images.js';
 import { writeBranding } from './branding.js';
 import { writeFeeds } from './feeds.js';
+import { publicDeployment, deploymentModel, type DeploymentInput } from './deployment.js';
+import { artifactFiles, prepareGithubArtifact } from './github-pages.js';
 
 const sourceRoot = path.resolve(import.meta.dirname, '../..');
 const mediaImplementation = fs.readFile(new URL(import.meta.url)).then(digest);
@@ -305,16 +307,20 @@ export async function buildSite(
     updateDist?: boolean;
     assets?: string;
     artifactRoot?: string;
+    deployment?: DeploymentInput;
   } = {},
 ): Promise<BuildResult> {
   const log = options.onLog || (() => undefined);
-  const model = options.model || (await store.exclusive(() => store.read()));
+  const sourceModel = options.model || (await store.exclusive(() => store.read()));
+  const deployment = publicDeployment(sourceModel.site.url, options.deployment);
+  const github = deployment.target === 'github-pages';
+  const model = deploymentModel(sourceModel, deployment);
   const id = options.id || `${Date.now()}-${randomUUID().slice(0, 8)}`;
   if (!/^[\w-]+$/.test(id)) throw new Error('Invalid build identity');
   const buildRoot = path.join(options.artifactRoot || path.join(store.root, '.studio/builds'), id),
     output = path.join(buildRoot, 'public');
   await fs.mkdir(output, { recursive: true });
-  await atomicWrite(path.join(buildRoot, 'source.json'), JSON.stringify(model));
+  await atomicWrite(path.join(buildRoot, 'source.json'), JSON.stringify(sourceModel));
   log('Preparing reader styles and browser enhancements…');
   const assets = options.assets || (await buildAssets(store.root));
   const readerAssets = await stageReaderAssets(assets, output);
@@ -329,6 +335,8 @@ export async function buildSite(
   );
   const resolveAlias = (url: string) => resolveMediaLink(url, allMediaLinks);
   const renderer = await createRenderer(model, {
+    publicBasePath: deployment.basePath,
+    staticOnly: github,
     diagramCacheDir: path.join(store.root, '.studio/render-cache/mermaid'),
     readerAssets,
     brandingVersion,
@@ -385,7 +393,7 @@ export async function buildSite(
   const dimensions = await copyMedia(store.root, output, references);
   for (const [route, html] of pages) pages.set(route, resolveResponsiveImages(html, dimensions));
   const comments = model.site.integrations.comments;
-  if (comments.enabled) {
+  if (comments.enabled && !github) {
     await fs.copyFile(path.join(assets, 'annotations-worker.js'), path.join(output, '_worker.js'));
     await fs.writeFile(
       path.join(output, '_routes.json'),
@@ -436,7 +444,7 @@ export async function buildSite(
     await fs.mkdir(path.dirname(target), { recursive: true });
     await fs.writeFile(target, html);
   }
-  const url = model.site.url.replace(/\/$/, '');
+  const url = deployment.baseUrl;
   await fs.mkdir(path.join(output, 'assets/archive'), { recursive: true });
   await fs.writeFile(
     path.join(output, renderer.archiveCatalog.path.slice(1)),
@@ -471,7 +479,7 @@ export async function buildSite(
         .map((r) => `<url><loc>${escapeHtml(url + r)}</loc></url>`)
         .join('')}</urlset>`,
     );
-  await writeFeeds(output, model.site, renderer.entries, brandingVersion);
+  await writeFeeds(output, model.site, renderer.entries, brandingVersion, deployment.basePath);
   await fs.writeFile(
     path.join(output, 'robots.txt'),
     `User-agent: *\nAllow: /\n${model.site.metadata.sitemap && model.site.metadata.indexing ? `Sitemap: ${url}/sitemap.xml\n` : ''}`,
@@ -480,7 +488,7 @@ export async function buildSite(
     path.join(output, 'assets/deployment.json'),
     JSON.stringify({ version: 1, id }),
   );
-  await fs.writeFile(
+  if (!github) await fs.writeFile(
     path.join(output, '_headers'),
     `/*\n  X-Content-Type-Options: nosniff\n  Referrer-Policy: strict-origin-when-cross-origin\n  Permissions-Policy: camera=(), microphone=(), geolocation=()\n  Content-Security-Policy: ${contentSecurityPolicy(model.site)}\n/assets/*\n  Access-Control-Allow-Origin: *\n${model.site.mediaProtection.discourageIndexing ? '  X-Robots-Tag: noindex\n' : ''}/assets/deployment.json\n  Cache-Control: no-store\n/assets/reader-assets.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/reading-catalog.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/search-manifest.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/archive/*\n  Cache-Control: public, max-age=31536000, immutable\n/assets/search/*\n  Cache-Control: public, max-age=31536000, immutable\n/assets/media-details.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/annotation-config.json\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/discussion-:mode.css\n  Cache-Control: public, max-age=0, must-revalidate\n/assets/bundles/*\n  Cache-Control: public, max-age=31536000, immutable\n/assets/themes/*\n  Cache-Control: public, max-age=31536000, immutable\n/assets/chunks/*\n  Cache-Control: public, max-age=31536000, immutable\n${model.site.mediaProtection.discourageIndexing ? '/m/*\n  X-Robots-Tag: noindex\n' : ''}/media/*\n${model.site.mediaProtection.discourageIndexing ? '  X-Robots-Tag: noindex\n' : ''}  Cache-Control: public, max-age=3600\n  Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; sandbox\n`,
   );
@@ -493,7 +501,7 @@ export async function buildSite(
       await fs.writeFile(path.join(output, `assets/discussion-${mode}.css`), css);
     }
   }
-  await fs.writeFile(
+  if (!github) await fs.writeFile(
     path.join(output, '_redirects'),
     siteRedirects(
       model.entries,
@@ -502,18 +510,9 @@ export async function buildSite(
       new Map([...allMediaLinks].filter(([, target]) => publicMediaUrls.has(target))),
     ),
   );
-  const manifest = (await walk(output))
+  let manifest = (await walk(output))
     .map((file) => path.relative(output, file).split(path.sep).join('/'))
     .sort();
-  let totalBytes = 0;
-  for (const filename of manifest) {
-    const stat = await fs.stat(path.join(output, filename));
-    totalBytes += stat.size;
-    if (stat.size > 25 * 1024 * 1024)
-      throw new Error(`${filename} exceeds the Pages 25 MiB per-file limit`);
-  }
-  if (manifest.length > 20000)
-    throw new Error('This build exceeds the 20,000 asset baseline for Cloudflare Pages');
   const allowed = new Set([
     ...[...allMediaLinks]
       .filter(([, target]) => publicMediaUrls.has(target))
@@ -568,20 +567,35 @@ export async function buildSite(
         );
       }
     }
+  const redirects = github ? await prepareGithubArtifact(output, model, deployment,
+    new Map([...allMediaLinks].filter(([, target]) => publicMediaUrls.has(target))),
+    renderer.archiveCatalog.path) : 0;
+  if (github) manifest = await artifactFiles(output);
+  let totalBytes = 0;
+  for (const filename of manifest) {
+    const stat = await fs.stat(path.join(output, filename));
+    totalBytes += stat.size;
+    if (!github && stat.size > 25 * 1024 * 1024)
+      throw new Error(`${filename} exceeds the Pages 25 MiB per-file limit`);
+  }
+  if (github && totalBytes > 1_000_000_000)
+    throw new Error('This build exceeds the GitHub Pages 1 GB published-site limit. Reduce or externally host large media.');
+  if (!github && manifest.length > 20000)
+    throw new Error('This build exceeds the 20,000 asset baseline for Cloudflare Pages');
   const result: BuildResult = {
     id,
     outputDir: output,
-    pages: pages.size,
+    pages: pages.size + redirects,
     entryRoutes: renderer.entries.map((entry) => routeFor(entry, model.site.collections)),
     collectionNames: {
       posts: model.site.collections.posts.name,
       lab: model.site.collections.lab.name,
     },
     manifest,
-    diagnostics: model.site.url.includes('example.com')
-      ? ['Set your canonical site URL in Studio before publishing.']
-      : [],
-    sourceRevision: digest(JSON.stringify(model)),
+    diagnostics: github
+      ? ['GitHub Pages static profile: annotations, ACA, Cloudflare-managed analytics and Cloudflare response-header rules are unavailable. General Giscus comments remain available when configured.']
+      : model.site.url.includes('example.com') ? ['Set your canonical site URL in Studio before publishing.'] : [],
+    sourceRevision: digest(JSON.stringify(sourceModel)),
     completedAt: new Date().toISOString(),
     totalBytes,
     contentCounts: {

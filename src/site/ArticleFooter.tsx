@@ -7,21 +7,24 @@ import { resolveEntrySettings } from '../shared/entry-settings.js';
 import { shortLinkPath } from '../shared/shortlinks.js';
 import { articleCitations } from '../shared/article-citation.js';
 import { articleQrSvg } from '../engine/article-qr.js';
+import { publicUrl } from '../shared/public-path.js';
 import type { RenderedEntry } from './pages.js';
 
 export function ArticleFooter({
   entry,
   site,
   preview,
+  basePath = '',
 }: {
   entry: RenderedEntry;
   site: SiteConfig;
   preview: boolean;
+  basePath?: string;
 }) {
   const { reading } = resolveEntrySettings(site, entry);
   if (!reading.articleFooter) return null;
-  const canonical = new URL(routeFor(entry, site.collections), site.url).href;
-  const short = entry.shortCode ? new URL(shortLinkPath(entry), site.url).href : '';
+  const canonical = publicUrl(routeFor(entry, site.collections), site.url, basePath);
+  const short = entry.shortCode ? publicUrl(shortLinkPath(entry), site.url, basePath) : '';
   const citations = articleCitations({
     id: entry.id,
     title: entry.title,

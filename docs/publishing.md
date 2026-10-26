@@ -1,5 +1,7 @@
 # Build and publish
 
+For repository-based, push-to-publish hosting without Cloudflare, follow [GitHub Pages deployment](github-pages.md). That build profile supports repository subpaths and produces a plain static artifact. The Cloudflare workflows below remain separate.
+
 `npm run build` generates the public site in `dist/`. `npm run preview` serves it through Wrangler's Pages emulator at port 4173. `npm run build:console` compiles the local console separately; it is never part of `dist/`.
 
 Studio's Build button saves the active editor/settings, captures source, renders the entire public site, validates the result, and records a job. Build & Publish first checks that the configured Pages project exists in the selected account, then performs that process and uploads the exact accepted artifact. Missing projects stop before compilation, R2 synchronization or Pages upload.

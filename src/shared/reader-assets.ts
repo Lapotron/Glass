@@ -1,5 +1,6 @@
 export type ReaderAssets = {
   version: 1;
+  basePath?: string;
   script: string;
   style: string;
   appearance: string;

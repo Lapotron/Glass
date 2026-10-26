@@ -1,6 +1,7 @@
 import { t, setUiText } from '../shared/i18n.js';
 import { escapeHtml } from '../shared/utils.js';
 import { languageOptionLabel } from '../shared/content-languages.js';
+import { publicPath, publicAsset } from '../shared/public-path.js';
 type Manifest = {
   version: 1;
   revision: string;
@@ -31,7 +32,7 @@ const searchFilterLabels = [
 ] as const;
 let manifestRequest: Promise<Manifest> | undefined;
 function manifest() {
-  return (manifestRequest ??= fetch('/assets/search-manifest.json', { cache: 'no-cache' })
+  return (manifestRequest ??= fetch(publicPath('/assets/search-manifest.json'), { cache: 'no-cache' })
     .then(async (response) => {
       if (!response.ok) throw new Error(t('Build the site to create its public search index.'));
       const value = (await response.json()) as Manifest;
@@ -39,7 +40,7 @@ function manifest() {
         value.version !== 1 ||
         !Array.isArray(value.languages) ||
         value.languages.some(
-          (item) => !/^\/assets\/search\/[a-f0-9]{20}\/[a-z]+\/pagefind\.js$/.test(item.module),
+          (item) => !publicAsset(item.module, /^\/assets\/search\/[a-f0-9]{20}\/[a-z]+\/pagefind\.js$/),
         )
       )
         throw new Error(t('The search index changed. Retry to refresh it.'));
@@ -58,7 +59,7 @@ async function loadModule(url: string) {
         /* @vite-ignore */ moduleAttempts.get(url) ? `${url}?retry=${moduleAttempts.get(url)}` : url
       )
         .then(async (module: Pagefind) => {
-          await module.options({ baseUrl: '/', highlightParam: 'highlight' });
+          await module.options({ baseUrl: publicPath('/'), highlightParam: 'highlight' });
           return module;
         })
         .catch((error) => {

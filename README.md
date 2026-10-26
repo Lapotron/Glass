@@ -4,7 +4,7 @@
 
 Glass brings a Liquid Glass interface, a capable writing studio and a custom static engine into one blog. Write locally or in a private Cloudflare-hosted Studio. Publish complete HTML pages with readable typography, build-time mathematics and diagrams, and interactions that load when readers need them.
 
-[Showcase](#showcase) · [Run locally](#run-locally) · [Host on Cloudflare](#host-on-cloudflare) · [Documentation](#documentation)
+[Showcase](#showcase) · [Run locally](#run-locally) · [GitHub Pages](#host-on-github-pages) · [Cloudflare](#host-on-cloudflare) · [Documentation](#documentation)
 
 ## Showcase
 
@@ -73,6 +73,14 @@ npm run preview
 
 Public output goes to `dist/`. Only published content enters the site, feeds and search. Article mathematics, diagrams and syntax highlighting are compiled before publication; reader JavaScript enhances the finished pages.
 
+## Host on GitHub Pages
+
+For a Hugo-style workflow, use the [GitHub Pages quick start](docs/github-pages.md): create your own repository from the reusable Glass base, select **Settings → Pages → Source: GitHub Actions**, and run **Publish Glass to GitHub Pages** once. Later pushes to the default branch build and publish automatically.
+
+No Cloudflare account, personal access token or hosted Studio is needed. The workflow discovers the correct URL for account sites, repository paths such as `/my-blog/`, and configured custom domains. Only the generated public reader is deployed; local Studio remains an optional editor.
+
+Search, math, diagrams, media, reader tools and optional general Giscus comments work on the static site. Line annotations, ACA and Cloudflare-specific hosting features are omitted from this profile. See the guide's feature table and repository-visibility notes before choosing a deployment method.
+
 ## Host on Cloudflare
 
 The [dashboard deployment guide](docs/hosted-studio.md#dashboard-only-deployment) walks through GitHub-connected Workers Builds, custom domains, Cloudflare Access and private D1/R2 storage. Hosted authoring needs a browser and does not require a local server.
@@ -97,7 +105,7 @@ Local Studio also retains [Cloudflare Pages Direct Upload](docs/publishing.md). 
 | Writing           | [Markdown reference](docs/markdown-reference.md) · [Editor workspace](docs/editor-workspace.md) · [Authoring and MCP](docs/mcp-authoring.md) |
 | Technical content | [Math](docs/math-authoring.md) · [Pseudocode](docs/pseudocode.md) · [Diagrams](docs/diagrams.md) · [Charts](docs/charts.md)                  |
 | Site management   | [Settings](docs/site-settings.md) · [Media](docs/media.md) · [Studio operations](docs/studio-operations.md) · [Recovery](docs/recovery.md)   |
-| Hosting           | [Hosted Studio](docs/hosted-studio.md) · [Pages publishing](docs/publishing.md) · [ACA](docs/aca.md)                                         |
+| Hosting           | [GitHub Pages](docs/github-pages.md) · [Hosted Studio](docs/hosted-studio.md) · [Pages publishing](docs/publishing.md) · [ACA](docs/aca.md)                                         |
 | Development       | [Contracts](docs/contracts.md) · [Design system](docs/design-system.md) · [Production performance](docs/production-performance.md)           |
 
 ## Development checks

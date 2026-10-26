@@ -4,11 +4,12 @@ import {
   type MediaDetailsManifest,
 } from './media-details.js';
 import type { ViewerImage } from './image-viewer.js';
+import { publicPath } from './public-path.js';
 
 let manifest: Promise<MediaDetailsManifest> | undefined;
 async function imageManifest() {
   if (!manifest)
-    manifest = fetch('/assets/media-details.json', {
+    manifest = fetch(publicPath('/assets/media-details.json'), {
       signal: AbortSignal.timeout(10000),
       credentials: 'omit',
     })
@@ -44,5 +45,5 @@ export async function publicImageDetails(image: ViewerImage): Promise<Partial<Im
 export async function publicImageFallback(image: ViewerImage): Promise<string | undefined> {
   const entry = await imageEntry(image);
   if (!entry) return;
-  return new URL(canonicalMediaUrl(entry[0]), location.origin).href;
+  return new URL(publicPath(canonicalMediaUrl(entry[0])), location.origin).href;
 }

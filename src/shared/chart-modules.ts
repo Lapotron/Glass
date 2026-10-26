@@ -1,3 +1,4 @@
+import { publicAsset, readerBasePath } from './public-path.js';
 export const chartModuleKeys = [
   'runtime',
   'cartesian',
@@ -7,7 +8,7 @@ export const chartModuleKeys = [
   'sankey',
 ] as const;
 export type ChartModules = Partial<Record<(typeof chartModuleKeys)[number], string>>;
-export function validChartModules(value: unknown): value is ChartModules {
+export function validChartModules(value: unknown, basePath = readerBasePath()): value is ChartModules {
   return (
     !!value &&
     typeof value === 'object' &&
@@ -16,9 +17,7 @@ export function validChartModules(value: unknown): value is ChartModules {
       ([key, url]) =>
         chartModuleKeys.includes(key as any) &&
         typeof url === 'string' &&
-        /^\/assets\/bundles\/[a-f0-9]{20}\/chunks\/echarts-(?:runtime|cartesian|radial|hierarchy|heatmap|sankey)-[\w-]+\.js$/.test(
-          url,
-        ),
+        publicAsset(url, /^\/assets\/bundles\/[a-f0-9]{20}\/chunks\/echarts-(?:runtime|cartesian|radial|hierarchy|heatmap|sankey)-[\w-]+\.js$/, basePath),
     )
   );
 }

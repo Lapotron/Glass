@@ -193,12 +193,15 @@ it('uses actual widths consistently in images and preload candidates while retai
   expect(responsiveWidths(2400)).toEqual([480, 960, 1600]);
   const images = new Map([['/media/small image.jpg', { width: 736, height: 400 }]]);
   const html = resolveResponsiveImages(
-    '<link rel="preload" as="image" href="/media/small%20image.jpg" imagesrcset="wrong 1600w"/><img src="/media/small%20image.jpg" srcset="wrong 1600w" sizes="100vw" loading="eager"/><img src="https://outside.test/photo.jpg"/>',
+    '<link rel="preload" as="image" imagesrcset="wrong 1600w"/><link rel="preload" as="image" href="/media/small%20image.jpg" imagesrcset="wrong 1600w"/><img src="/media/small%20image.jpg" srcset="wrong 1600w" sizes="100vw" loading="eager"/><img src="https://outside.test/photo.jpg"/>',
     images,
   );
   expect(html).toContain('small%20image-480.webp 480w');
   expect(html).toContain('small%20image-736.webp 736w');
   expect(html).not.toContain('1600w');
+  expect(html).toContain(
+    'imagesrcset="/media/small%20image-480.webp 480w, /media/small%20image-736.webp 736w"',
+  );
   expect(html).toContain('width="736" height="400"');
   expect(html).toContain('fetchpriority="high"');
   expect(html).toContain('sizes="100vw"');
@@ -208,7 +211,8 @@ it('uses private originals in hosted previews without changing layout or externa
   const external =
     '<img src="https://outside.test/photo.jpg" srcset="https://outside.test/small.jpg 480w"/>';
   const html = useOriginalMediaImages(
-    '<link rel="preload" as="image" href="/media/a%20portrait.webp" imagesrcset="/media/a%20portrait-480.webp 480w"/>' +
+    '<link rel="preload" as="image" imagesrcset="/media/a%20portrait-480.webp 480w"/>' +
+      '<link rel="preload" as="image" href="/media/a%20portrait.webp" imagesrcset="/media/a%20portrait-480.webp 480w"/>' +
       '<img src="/media/a%20portrait.webp" srcset="/media/a%20portrait-480.webp 480w" width="128" height="128" sizes="128px" alt="Portrait"/>' +
       "<IMG SRC='/media/cover.webp' SRCSET='/media/cover-480.webp 480w'/>" +
       external,

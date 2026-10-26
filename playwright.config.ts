@@ -4,7 +4,7 @@ process.env.no_proxy = process.env.NO_PROXY;
 export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.e2e.ts',
-  testIgnore: '**/cloud-studio.e2e.ts',
+  testIgnore: ['**/cloud-studio.e2e.ts', '**/github-pages.e2e.ts'],
   outputDir: './test-results/local',
   fullyParallel: false,
   workers: 1,

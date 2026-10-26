@@ -1,6 +1,7 @@
 import { t } from '../../shared/i18n.js';
 import type { ChartConfig } from '../../shared/chart-schema.js';
 import { validChartModules, freshChartUrl, type ChartModules } from '../../shared/chart-modules.js';
+import { publicPath } from '../../shared/public-path.js';
 type Controller = Awaited<ReturnType<(typeof import('./echarts-runtime.js'))['activateChart']>>;
 export function enhance(node: HTMLElement, config: ChartConfig) {
   let controller: Controller | undefined, pending: Promise<Controller> | undefined;
@@ -15,7 +16,7 @@ export function enhance(node: HTMLElement, config: ChartConfig) {
     status.textContent = t("Preparing chart controls…");
     const load = async () => {
       if (!failures) return import('./echarts-runtime.js');
-      const response = await fetch('/assets/reader-assets.json', {
+      const response = await fetch(publicPath('/assets/reader-assets.json'), {
         cache: 'no-store',
         signal: AbortSignal.timeout(10000),
       });
