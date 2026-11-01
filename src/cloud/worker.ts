@@ -35,6 +35,8 @@ import { history, cloudJobRecord, persistHistory } from './history.js';
 import { Operations, snapshotRevision, type MarkdownImportPlan } from '../engine/operations.js';
 import { savedSegmentsSchema } from '../shared/aca-segments.js';
 import { SearchConsoleService } from '../server/search-console.js';
+import { GoogleSearchConsole } from '../server/google-search-console.js';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { annotationReader } from '../shared/annotations.js';
 import { resolveEntrySettings } from '../shared/entry-settings.js';
 import { acaSummary, saveAca } from './services.js';
@@ -57,6 +59,11 @@ import { MediaProtectionService } from '../server/media-protection.js';
 import { discussionCheckSchema, checkDiscussionConfiguration } from '../server/discussions.js';
 import { discussionThemePreview } from '../engine/discussion-preview.js';
 import { siteSchema } from '../shared/contracts.js';
+import { beginSharedMedia, sharedMediaMatches, uploadSharedMedia } from './shared-media.js';
+import { runServiceAlerts } from './service-alerts.js';
+import { runGoogleSync } from './google-sync.js';
+import { servePublicMedia } from './public-media-worker.js';
+import { gateLegacyMedia } from './legacy-media-gate.js';
 import seed from '../../tests/fixtures/notebook/site.json';
 
 const base = '/workspace';
@@ -118,7 +125,12 @@ async function privateFile(env: CloudEnv, path: string) {
   return record;
 }
 export function createCloudApp(
-  options: { authenticate?: typeof authenticate; connectionFetch?: typeof fetch } = {},
+  options: {
+    authenticate?: typeof authenticate;
+    connectionFetch?: typeof fetch;
+    googleSearchFetch?: typeof fetch;
+    mediaFetch?: typeof fetch;
+  } = {},
 ) {
   const app = new Hono<{
     Bindings: CloudEnv;
@@ -164,6 +176,18 @@ export function createCloudApp(
     );
   });
   app.use('*', async (c, next) => {
+    // The media hostname shares this Worker but cannot reach Studio or CI routes.
+    const origin = new URL(c.req.url).origin;
+    if (c.env.MEDIA_ORIGIN && origin === c.env.MEDIA_ORIGIN) {
+      if (origin === c.env.STUDIO_ORIGIN) return new Response(null, { status: 503 });
+      const media = {
+        MEDIA_ORIGIN: c.env.MEDIA_ORIGIN,
+        MEDIA_PREFIX: c.env.MEDIA_PREFIX || 'media',
+      };
+      return c.env.MEDIA_LEGACY_COMPAT === 'true'
+        ? gateLegacyMedia(c.req.raw, media, options.mediaFetch || fetch)
+        : servePublicMedia(c.req.raw, { ...media, BUCKET: c.env.BUCKET });
+    }
     c.header('Cache-Control', 'private, no-store');
     c.header('X-Content-Type-Options', 'nosniff');
     c.header('X-Robots-Tag', 'noindex, nofollow');
@@ -220,7 +244,7 @@ export function createCloudApp(
       /^\/api\/(?:jobs\/[\w-]+\/log|backups\/[\w-]+\/download|media\/[\w-]+\/source|notebook\/reset\/[\w-]+\/backup)$/.test(
         c.req.path,
       ) ||
-      /^\/api\/(?:cloud-jobs\/|cloud\/(?:pulse$|mcp-keys(?:\/|$)|migration(?:\/|$)))/.test(
+      /^\/api\/(?:cloud-jobs\/|cloud\/(?:pulse$|alerts$|mcp-keys(?:\/|$)|migration(?:\/|$)))/.test(
         c.req.path,
       ) ||
       /^\/api\/cloud\/(?:operations|exports)(?:\/|$)/.test(c.req.path) ||
@@ -249,7 +273,7 @@ export function createCloudApp(
         .run();
     const workingSet =
       c.req.path === '/mcp' ||
-      /^\/api\/(?:bootstrap$|jobs$|content(?:$|\/[\w-]+(?:\/(?:download|revisions.*))?$)|pages\/about(?:\/|$)|site$|library$|projects$|maintenance$|health$|cloud\/status$|cloud-media\/protection$|connections(?:\/|$)|analytics(?:[-/]|$)|media(?:$|\/(?:metadata|details)$)|schedule$|aca\/deployment$|services\/readiness$|integrations\/)/.test(
+      /^\/api\/(?:bootstrap$|jobs$|content(?:$|\/[\w-]+(?:\/(?:download|revisions.*))?$)|pages\/about(?:\/|$)|site$|library$|projects$|maintenance$|health$|cloud\/status$|cloud-media\/protection$|connections(?:\/|$)|analytics(?:[-/]|$)|search-console(?:\/|$)|media(?:$|\/(?:metadata|details)$)|schedule$|aca\/deployment$|services\/readiness$|integrations\/)/.test(
         c.req.path,
       );
     const core =
@@ -454,6 +478,21 @@ export function createCloudApp(
     if (!job) throw new CloudError('No active job.', 409);
     return job as CloudJob;
   };
+  app.post('/__ci/jobs/:id/shared-media/begin', async (c) =>
+    json(await beginSharedMedia(c.env, c.req.param('id'))),
+  );
+  app.post('/__ci/jobs/:id/shared-media/matches', async (c) =>
+    json(await sharedMediaMatches(c.env, c.req.param('id'), await c.req.json())),
+  );
+  app.put('/__ci/jobs/:id/shared-media/object', async (c) => {
+    let descriptor: unknown;
+    try {
+      descriptor = JSON.parse(c.req.header('X-Glass-Media') || '');
+    } catch {
+      throw new CloudError('A valid public-media descriptor is required.');
+    }
+    return json(await uploadSharedMedia(c.env, c.req.param('id'), descriptor, c.req.raw));
+  });
   app.post('/__ci/jobs/:id/transfers', async (c) => {
     const job = await transferJob(c),
       data = await c.req.json();
@@ -1073,13 +1112,55 @@ export function createCloudApp(
   app.get('/api/cloud-media/protection', async (c) =>
     json(await new MediaProtectionService(c.get('store'), connections(c)).status()),
   );
-  app.put('/api/connections', async (c) => json(await connections(c).update(await c.req.json())));
-  app.post('/api/connections/import-environment', async (c) =>
-    json(await connections(c).importEnvironment((await c.req.json()).revision)),
-  );
+  app.put('/api/connections', async (c) => {
+    const input = await c.req.json(),
+      result = await connections(c).update(input);
+    if (
+      ['alertWebhookUrl', 'alertWebhookToken'].some(
+        (key) => key in (input.set || {}) || (input.remove || []).includes(key),
+      )
+    )
+      c.get('workspace').complete(
+        'UPDATE cloud_service_alerts SET enabled=?,endpoint_hash=?,sent=?,pending=NULL,pending_id=NULL,attempts=0,next_check=0,lease=NULL,lease_until=0 WHERE id=1',
+        result.fields.alertWebhookUrl.configured ? 1 : 0,
+        '',
+        '[]',
+      );
+    return json(result);
+  });
+  app.post('/api/connections/import-environment', async (c) => {
+    const result = await connections(c).importEnvironment((await c.req.json()).revision);
+    c.get('workspace').complete(
+      'UPDATE cloud_service_alerts SET enabled=?,endpoint_hash=?,sent=?,pending=NULL,pending_id=NULL,attempts=0,next_check=0,lease=NULL,lease_until=0 WHERE id=1',
+      result.fields.alertWebhookUrl.configured ? 1 : 0,
+      '',
+      '[]',
+    );
+    return json(result);
+  });
+  app.get('/api/cloud/alerts', async (c) => {
+    const state = await c.env.DB.prepare(
+      'SELECT enabled,pending_id,attempts,next_check,last_status,last_attempt FROM cloud_service_alerts WHERE id=1',
+    ).first();
+    return json(
+      state || {
+        enabled: 0,
+        pending_id: null,
+        attempts: 0,
+        next_check: 0,
+        last_status: null,
+        last_attempt: null,
+      },
+    );
+  });
   app.get('/api/cloudflare/media', async (c) => {
     const { site } = await c.get('store').snapshot();
-    return json(r2Readiness(site, await connections(c).values()));
+    return json(
+      r2Readiness(site, await connections(c).values(), {
+        available: !!c.env.BUCKET,
+        bucketName: c.env.PRIVATE_BUCKET_NAME,
+      }),
+    );
   });
   app.post('/api/connections/test', async (c) => {
     const { provider } = z
@@ -1091,7 +1172,10 @@ export function createCloudApp(
     const fetcher = options.connectionFetch || edgeFetch;
     return json(
       provider === 'r2'
-        ? await checkR2Connection(site, credentials, fetcher)
+        ? await checkR2Connection(site, credentials, fetcher, {
+            bucket: c.env.BUCKET,
+            bucketName: c.env.PRIVATE_BUCKET_NAME,
+          })
         : await checkCloudflareConnection(site.cloudflare.accountId, credentials, fetcher),
     );
   });
@@ -1149,6 +1233,14 @@ export function createCloudApp(
   const queueCdnMaintenance = async (c: any) => {
     const model = await c.get('store').snapshot(),
       credentials = await connections(c).values();
+    if (
+      !c.req.path.includes('/protection/') &&
+      model.site.mediaDelivery.transport === 'studio-binding'
+    )
+      throw new CloudError(
+        'Shared-bucket CDN inventory and cleanup are not available yet. No objects were changed and no build was queued.',
+        409,
+      );
     if (!credentials.CLOUDFLARE_API_TOKEN)
       throw new CloudError(
         'Save a Cloudflare token before running public CDN maintenance. No build was queued.',
@@ -1338,6 +1430,65 @@ export function createCloudApp(
     });
   });
   app.get('/api/search-console', async (_c) => json(await new SearchConsoleService(base).list()));
+  app.get('/api/search-console/oauth/status', async () =>
+    json(await new GoogleSearchConsole(base, options.googleSearchFetch || fetch).status()),
+  );
+  app.put('/api/search-console/oauth/settings', async (c) => {
+    const result = await new GoogleSearchConsole(
+      base,
+      options.googleSearchFetch || fetch,
+    ).configure(await c.req.json(), new URL((await c.get('store').snapshot()).site.url).origin);
+    c.get('workspace').complete(
+      'UPDATE cloud_search_sync SET enabled=?,next_due=0 WHERE id=1',
+      result.autoSync ? 1 : 0,
+    );
+    return json(result);
+  });
+  app.get('/api/search-console/oauth/properties', async (c) =>
+    json({
+      properties: await new GoogleSearchConsole(
+        base,
+        options.googleSearchFetch || fetch,
+      ).properties(new URL((await c.get('store').snapshot()).site.url).origin),
+    }),
+  );
+  app.post('/api/search-console/oauth/start', async (c) => {
+    const origin = new URL(c.req.url).origin,
+      result = await new GoogleSearchConsole(base, options.googleSearchFetch || fetch).start(
+        origin,
+        c.get('actor').id,
+      );
+    setCookie(c, 'glass_gsc', result.cookie, {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'Lax',
+      path: '/api/search-console/oauth/callback',
+      maxAge: 600,
+    });
+    return c.json({ url: result.url });
+  });
+  app.get('/api/search-console/oauth/callback', async (c) => {
+    await new GoogleSearchConsole(base, options.googleSearchFetch || fetch).finish(
+      new URL(c.req.url).origin,
+      c.get('actor').id,
+      c.req.query('state') || '',
+      getCookie(c, 'glass_gsc') || '',
+      c.req.query('code') || '',
+    );
+    c.get('workspace').complete('UPDATE cloud_search_sync SET enabled=0,next_due=0 WHERE id=1');
+    deleteCookie(c, 'glass_gsc', { path: '/api/search-console/oauth/callback', secure: true });
+    return c.redirect('/#analytics', 303);
+  });
+  app.post('/api/search-console/oauth/sync', async (c) => {
+    const result = await new GoogleSearchConsole(base, options.googleSearchFetch || fetch).sync(
+      new URL((await c.get('store').snapshot()).site.url).origin,
+    );
+    c.get('workspace').complete(
+      'UPDATE cloud_search_sync SET next_due=?,last_error=NULL WHERE id=1',
+      Date.now() + 86400000,
+    );
+    return json(result);
+  });
   app.get('/api/search-console/:id', async (c) =>
     json(await new SearchConsoleService(base).read(c.req.param('id'))),
   );
@@ -1712,7 +1863,10 @@ export function createCloudApp(
       },
       { summary: () => acaSummary(c.env, c.get('store')) } as any,
       edgeFetch,
-      { persistIssues: false },
+      {
+        persistIssues: false,
+        studioBinding: { available: !!c.env.BUCKET, bucketName: c.env.PRIVATE_BUCKET_NAME },
+      },
     ).report();
     report.checks = report.checks.filter((check) => check.id !== 'pages');
     const configured = !!(
@@ -2656,11 +2810,14 @@ export default {
     _event: unknown,
     env: CloudEnv,
     context: { waitUntil(promise: Promise<unknown>): void },
-  ) =>
+  ) => {
     context.waitUntil(
       (async () => {
         if (!(await runDeferredBuild(env))) await cloudSchedule(env);
         await storageMaintenance(env);
       })(),
-    ),
+    );
+    context.waitUntil(runServiceAlerts(env));
+    context.waitUntil(runGoogleSync(env));
+  },
 };

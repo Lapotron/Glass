@@ -1,5 +1,40 @@
 import { expect, it } from 'vitest';
 import { applyCloudSettings } from '../scripts/cloud-settings-values.js';
+import { studioMediaConfig } from '../scripts/cloud-media-config.js';
+
+it('configures the shared media route without allowing Studio or private prefixes', () => {
+  const env: NodeJS.ProcessEnv = {
+    GLASS_CLOUD_CONFIG: JSON.stringify({
+      GLASS_MEDIA_ORIGIN: 'https://assets.example.com',
+      GLASS_MEDIA_PREFIX: 'media',
+      GLASS_MEDIA_ZONE_ID: 'a'.repeat(32),
+      GLASS_MEDIA_LEGACY_COMPAT: 'true',
+    }),
+  };
+  applyCloudSettings(env);
+  expect(studioMediaConfig(env, 'https://console.example.com')).toEqual({
+    vars: {
+      MEDIA_ORIGIN: 'https://assets.example.com',
+      MEDIA_PREFIX: 'media',
+      MEDIA_LEGACY_COMPAT: 'true',
+    },
+    route: { pattern: 'assets.example.com/*', zone_id: 'a'.repeat(32) },
+  });
+  expect(studioMediaConfig({}, 'https://console.example.com')).toEqual({ vars: {} });
+  expect(studioMediaConfig({ GLASS_MEDIA_ORIGIN: '' }, 'https://console.example.com')).toEqual({
+    vars: { MEDIA_ORIGIN: '' },
+  });
+  for (const invalid of [
+    { ...env, GLASS_MEDIA_ORIGIN: 'https://console.example.com/' },
+    { ...env, GLASS_MEDIA_ORIGIN: 'http://assets.example.com' },
+    { ...env, GLASS_MEDIA_ORIGIN: 'https://assets.example.com:8443' },
+    { ...env, GLASS_MEDIA_PREFIX: 'workspace' },
+    { ...env, GLASS_MEDIA_ZONE_ID: 'invalid' },
+    { ...env, GLASS_MEDIA_ZONE_ID: '' },
+    { ...env, GLASS_MEDIA_LEGACY_COMPAT: 'yes' },
+  ])
+    expect(() => studioMediaConfig(invalid, 'https://console.example.com')).toThrow();
+});
 
 it('uses a complete separate machine login ahead of old compact JSON while preserving the deployment token override', () => {
   const environment = {

@@ -9,10 +9,15 @@ export default defineConfig({
     assets: { notFoundHandling: 'none', runWorkerFirst: true },
     env: {
       ASSETS: bindings.assets(),
-      DB: bindings.d1({ name: 'glass-dynamic-prototype' }),
+      DB: bindings.d1({
+        name: 'glass-dynamic-prototype',
+        ...(process.env.GLASS_STAGING_DATABASE_ID
+          ? { id: process.env.GLASS_STAGING_DATABASE_ID }
+          : {}),
+      }),
       ACCESS_TEAM: bindings.text(process.env.GLASS_ACCESS_TEAM || ''),
       ACCESS_AUD: bindings.text(process.env.GLASS_ACCESS_AUD || ''),
-      ACCESS_ADMINS: bindings.text(process.env.GLASS_ACCESS_ADMINS || 'me@example.com'),
+      ACCESS_ADMINS: bindings.text(process.env.GLASS_ACCESS_ADMINS || ''),
     },
   }),
 });

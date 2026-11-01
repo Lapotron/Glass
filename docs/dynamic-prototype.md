@@ -55,13 +55,13 @@ The smoke command writes `.studio/reports/dynamic.json`. It measures a cold HTML
 
 The public client includes React/RSC code that the production static reader does not require. Vinext's comparisons against Next.js do not establish an improvement over Glass. Measure deployed CPU, cold starts, regional D1 latency, cache hit rates and client payload before selecting an architecture for a real dynamic feature. No cloud deployment, paid provisioning or production migration is performed by the local tests.
 
-For now, retain Pages for public reading, deploy ACA as a small independent service when configured, and keep this prototype for evaluating future administrator APIs and account-oriented work.
+For now, retain Pages for public reading and keep this prototype as a local evaluation. It does not need a deployed Worker or database. ACA is also optional and requires its own infrastructure only if explicitly enabled.
 
 Primary references: [Vinext Cloudflare deployment](https://vinext.dev/docs/deploying/cloudflare), [compatibility differences](https://vinext.dev/docs/reference/differences), [Access JWT validation](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/).
 
-## Prepared private staging rollout
+## Optional private staging rollout
 
-The chosen destination is `staging.example.com`, with email one-time codes and the sole allowlisted address `me@example.com`. Public reader accounts and personalization remain future work. Run `npm run services:check` to verify read access using Studio's saved credential before provisioning. Configure the free Access organization, OTP provider, self-hosted application and allow policy before routing the Worker.
+The prototype is not part of the ordinary Studio and Pages deployment. If a private staging experiment is explicitly wanted later, the sample configuration targets `staging.example.com`, with email one-time codes and the sole allowlisted address `admin@example.com`. Public reader accounts and personalization remain future work. Run `npm run services:check` to verify read access using Studio's saved credential before provisioning. Configure the free Access organization, OTP provider, self-hosted application and allow policy before routing the Worker.
 
 Keep deployment identifiers in the notebook's private `.studio/services/staging.json`:
 
@@ -69,10 +69,11 @@ Keep deployment identifiers in the notebook's private `.studio/services/staging.
 {
   "accessTeam": "your-team-name",
   "accessAudience": "your-access-application-audience",
-  "adminEmails": ["me@example.com"]
+  "adminEmails": ["admin@example.com"],
+  "databaseId": "your-separate-staging-d1-uuid"
 }
 ```
 
-Then use root `npm run dynamic:deploy`. It verifies the application's hostname/audience and passes the saved Studio token and Access configuration through the child environment; it excludes R2/report credentials and redacts output. Direct package deployment refuses missing configuration. Attach the Worker custom domain in Cloudflare and verify that the hostname, routes, API, existing assets and direct Worker URL all retain the Access boundary. The local Studio and Pages deployment remain independent.
+Create and migrate the separate staging D1 database first. Then use root `npm run dynamic:deploy`. It verifies the application's hostname/audience and passes the saved Studio token and Access configuration through the child environment; it excludes R2/report credentials and redacts output. The database UUID is required so deployment cannot silently create or select a different database. Direct package deployment refuses missing configuration. Attach the Worker custom domain in Cloudflare and verify that the hostname, routes, API, existing assets and direct Worker URL all retain the Access boundary. The local Studio and Pages deployment remain independent.
 
 The free-tier target requires actual Worker CPU measurements, not local wall time: 10 ms CPU per invocation and 50 D1 queries. Keep the app private and unapproved for promotion if it cannot fit; do not purchase a plan automatically. Record deployed versions, database/migrations, Access application and verification result privately. A preflight permission failure must stop provisioning and upload; it does not invalidate the local artifact.

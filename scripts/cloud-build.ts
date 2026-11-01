@@ -5,6 +5,7 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { authoringInstructions } from '../src/shared/authoring-instructions.js';
 import { spawnSync } from 'node:child_process';
+import { studioMediaConfig } from './cloud-media-config.js';
 const mode = process.argv[2] || 'studio';
 const root = process.cwd(),
   folder = path.join(root, '.studio/cloud', mode);
@@ -69,7 +70,14 @@ if (mode === 'studio') {
     PRODUCTION_BRANCH: process.env.GLASS_PRODUCTION_BRANCH || 'main',
     SITE_STAGING_ORIGIN:
       process.env.GLASS_SITE_STAGING_ORIGIN || process.env.SITE_STAGING_ORIGIN || '',
+    PRIVATE_BUCKET_NAME: process.env.GLASS_PRIVATE_BUCKET || '',
   };
+  const media = studioMediaConfig(process.env, vars.STUDIO_ORIGIN);
+  Object.assign(vars, media.vars);
+  const routes: { pattern: string; custom_domain?: boolean; zone_id?: string }[] = [];
+  if (process.env.GLASS_ENABLE_CUSTOM_DOMAIN === 'true')
+    routes.push({ pattern: new URL(vars.STUDIO_ORIGIN).hostname, custom_domain: true });
+  if (media.route) routes.push(media.route);
   for (const name of [
     'ACCESS_TEAM',
     'ACCESS_AUD',
@@ -111,9 +119,7 @@ if (mode === 'studio') {
           : {}),
       },
     ],
-    ...(process.env.GLASS_ENABLE_CUSTOM_DOMAIN === 'true'
-      ? { routes: [{ pattern: new URL(vars.STUDIO_ORIGIN).hostname, custom_domain: true }] }
-      : {}),
+    ...(routes.length ? { routes } : {}),
   };
   await fs.writeFile(path.join(folder, 'wrangler.jsonc'), JSON.stringify(config, null, 2));
   console.log('Hosted Studio artifact: ' + path.relative(root, folder));

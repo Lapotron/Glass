@@ -7,6 +7,7 @@ import { spawnSync } from 'node:child_process';
 import { Store } from '../src/engine/store.js';
 import { prepareMediaDelivery } from '../src/engine/media-delivery.js';
 import { createR2Transport, synchronizeMedia } from '../src/server/r2.js';
+import { createStudioMediaTransport } from './cloud-shared-media.js';
 import { ConnectionSettings } from '../src/server/configuration.js';
 import { verifyAcaPublication } from '../src/server/aca-publication.js';
 import { recordCloudOwnership } from '../src/server/cloud-media.js';
@@ -272,7 +273,10 @@ try {
     if (job.kind === 'publish' && model.site.mediaDelivery.mode === 'r2') {
       built = await prepareMediaDelivery(built, model.site);
       await progress.phase('syncing-media');
-      const transport = createR2Transport(model.site, await new ConnectionSettings(root).values());
+      const transport =
+        model.site.mediaDelivery.transport === 'studio-binding'
+          ? await createStudioMediaTransport(model.site, job.id)
+          : createR2Transport(model.site, await new ConnectionSettings(root).values());
       try {
         await recordCloudOwnership(root, model.site, built.media!.assets);
         await synchronizeMedia(transport, built.outputDir, built.media!.assets, (event) => {

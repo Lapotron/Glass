@@ -4,6 +4,7 @@ import type { D1Database } from './db.js';
 import type { AcaReport, AcaReportName } from '../shared/aca.js';
 import { mergeCardinality } from './cardinality.js';
 import { audienceReport } from './audience-reports.js';
+import { segmentCohorts } from './segment-cohorts.js';
 import { vitalQuantile } from '../shared/audience.js';
 type Daily = {
   day: string;
@@ -159,9 +160,11 @@ export async function analyticsReport(
       'Unique browsers and audience metrics cover explicitly opted-in browsers only; they are not people or all visitors.',
       'A qualified read means at least 10 seconds of foreground active time. Idle after 60 seconds. Hidden tabs pause.',
       'Impressions require at least 50% visibility for one second. CTR measures observed on-site card/result clicks, including clicks without a qualified impression.',
-      recent
-        ? 'Range unique browsers are deduplicated exactly from retained records.'
-        : 'Range unique browsers use merged HyperLogLog summaries (about 3.25% standard error). Daily uniques are never summed.',
+      segmented
+        ? 'Segment unique browsers use merged HyperLogLog summaries (about 3.25% standard error).'
+        : recent
+          ? 'Range unique browsers are deduplicated exactly from retained records.'
+          : 'Range unique browsers use merged HyperLogLog summaries (about 3.25% standard error). Daily uniques are never summed.',
     ],
   };
   const byDay = new Map<string, Daily[]>();
@@ -338,9 +341,35 @@ export async function analyticsReport(
       views: row.views,
       qualified: row.qualified,
     }));
-    report.notes.push(
-      'Cohorts, returning-browser rates and daily network estimates are unavailable with segment filters. Clear the segment to view them.',
-    );
+    report.notes.push('Daily network estimates are unavailable with segment filters.');
+    if (optionalHistory) {
+      const history = await segmentCohorts(db, site, { from, to, content, revision, segment }, now);
+      if (history.unavailable) report.notes.push(history.unavailable);
+      else {
+        report.metrics = [
+          { label: 'Opt-in active browsers', value: history.selected! },
+          { label: 'Returning browsers', value: history.returning! },
+          {
+            label: 'Returning rate',
+            value: history.selected ? (history.returning! / history.selected) * 100 : null,
+            unit: '%',
+          },
+          {
+            label: 'Consent coverage',
+            value: views ? (optin / views) * 100 : null,
+            unit: '%',
+            note: 'Opted-in page views / all observed page views',
+          },
+        ];
+        report.cohorts = history.cohorts!;
+        report.notes.push(
+          'Segment cohorts begin at each browser’s first observed matching visit in the retained 90-day window. Later site visits count as returns even if their segment or device changes. Earlier matching visits may have expired; browsers are not people. Values require at least 10 eligible browsers and a mature window.',
+        );
+      }
+    } else
+      report.notes.push(
+        'Segmented returning browsers and cohorts require optional reader history and explicit consent.',
+      );
   }
   if (name === 'audience' && !segmented) {
     if (networkEstimates && !optionalHistory) {

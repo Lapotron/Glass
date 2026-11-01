@@ -145,7 +145,14 @@ async function handleRequest(request: Request, env: AcaEnvironment): Promise<Res
       .first<{ count: number }>();
     return json({
       protocol: 3,
-      capabilities: ['audience-v2', 'geography', 'visits', 'vital-percentiles', 'segmentation-v1'],
+      capabilities: [
+        'audience-v2',
+        'geography',
+        'visits',
+        'vital-percentiles',
+        'segmentation-v1',
+        'segment-cohorts-v1',
+      ],
       historyMode: env.IDENTITY_MODE === 'optional-consent' ? 'optional-consent' : 'anonymous',
       siteId: env.SITE_ID,
       siteOrigin: env.SITE_ORIGIN,

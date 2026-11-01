@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { ConflictError, digest } from '../engine/store.js';
 import { siteSchema, librarySchema } from '../shared/contracts.js';
+import { validAlertWebhook } from '../shared/service-alerts.js';
 import {
   connectionFields,
   type ConnectionField,
@@ -24,10 +25,27 @@ const connectionsSchema = z
   .object({
     cloudflareApiToken: secret.optional(),
     cloudflareBuildsApiToken: secret.optional(),
-    workersBuildsDeployHook: z.url().refine(value => /^https:\/\/api\.cloudflare\.com\/client\/v4\/workers\/builds\/deploy_hooks\/[\w-]+$/.test(value), 'Use the private Workers Builds Deploy Hook URL from Cloudflare.').optional(),
+    workersBuildsDeployHook: z
+      .url()
+      .refine(
+        (value) =>
+          /^https:\/\/api\.cloudflare\.com\/client\/v4\/workers\/builds\/deploy_hooks\/[\w-]+$/.test(
+            value,
+          ),
+        'Use the private Workers Builds Deploy Hook URL from Cloudflare.',
+      )
+      .optional(),
     acaReportToken: secret.optional(),
     r2AccessKeyId: secret.optional(),
     r2SecretAccessKey: secret.optional(),
+    alertWebhookUrl: z
+      .string()
+      .refine(
+        validAlertWebhook,
+        'Use a public HTTPS webhook URL without credentials or a custom port.',
+      )
+      .optional(),
+    alertWebhookToken: secret.optional(),
   })
   .strict();
 const runtimeSchema = z
@@ -43,6 +61,8 @@ const environmentNames: Record<ConnectionField, string> = {
   acaReportToken: 'ACA_REPORT_TOKEN',
   r2AccessKeyId: 'R2_ACCESS_KEY_ID',
   r2SecretAccessKey: 'R2_SECRET_ACCESS_KEY',
+  alertWebhookUrl: 'GLASS_ALERT_WEBHOOK_URL',
+  alertWebhookToken: 'GLASS_ALERT_WEBHOOK_TOKEN',
 };
 export class PrivateSettings<T extends object> {
   private pending: Promise<unknown> = Promise.resolve();

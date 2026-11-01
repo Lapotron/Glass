@@ -15,6 +15,9 @@ delete process.env.R2_SECRET_ACCESS_KEY;
 delete process.env.CLOUDFLARE_API_TOKEN;
 delete process.env.ACA_REPORT_TOKEN;
 // Browser tests mutate only this temporary notebook. They never write to the author's source.
+const testPort = Number(process.env.GLASS_BROWSER_TEST_PORT || 4387);
+if (!Number.isInteger(testPort) || testPort < 1024 || testPort > 65535)
+  throw new Error('Invalid isolated browser test port.');
 const project = process.cwd(),
   root = await fs.mkdtemp(path.join(os.tmpdir(), 'fieldnotes-browser-'));
 await fs.cp(path.join(project, 'tests/fixtures/notebook'), path.join(root, 'content'), {
@@ -74,9 +77,9 @@ const jobs = new JobService(
 );
 const newAcaCloud = new AcaCloudflareFixture();
 const context = await createApp(root, {
-  activePort: 4387,
+  activePort: testPort,
   applicationRoot: project,
-  launcher: new LauncherSettings(root, { notebookRoot: root, port: 4387 }),
+  launcher: new LauncherSettings(root, { notebookRoot: root, port: testPort }),
   analyticsFetch: newAcaCloud.fetch,
   jobs,
   acaDeployment: new AcaDeploymentService(store, jobs.connections, {
@@ -100,8 +103,8 @@ const context = await createApp(root, {
     });
   },
 });
-const server = serve({ fetch: context.app.fetch, hostname: '127.0.0.1', port: 4387 });
-console.log('Isolated browser fixture listening at http://127.0.0.1:4387');
+const server = serve({ fetch: context.app.fetch, hostname: '127.0.0.1', port: testPort });
+console.log(`Isolated browser fixture listening at http://127.0.0.1:${testPort}`);
 for (const signal of ['SIGINT', 'SIGTERM'] as const)
   process.on(signal, () => {
     context.close();

@@ -110,7 +110,7 @@ export class CloudWorkspace {
     this.effects.push({ sql, values });
     this.completion.push(this.env.DB.prepare(sql).bind(...values));
   }
-  async load(workingSet: boolean | 'core' | 'catalog' = false) {
+  async load(workingSet: boolean | 'core' | 'catalog' | 'search-console' = false) {
     // One statement gives a coherent revision/manifest snapshot, even across concurrent writers.
     const rows = await this.env.DB.prepare(
       'SELECT w.version, ' +
@@ -120,7 +120,11 @@ export class CloudWorkspace {
         ' FROM cloud_workspace w LEFT JOIN ' +
         (workingSet && workingSet !== 'catalog'
           ? '(SELECT * FROM cloud_files WHERE ' +
-            (workingSet === 'core' ? corePaths : workingPaths) +
+            (workingSet === 'core'
+              ? corePaths
+              : workingSet === 'search-console'
+                ? "path IN ('content/site.json','.studio/services/search-console-oauth.json') OR path GLOB '.studio/search-console/*'"
+                : workingPaths) +
             ')'
           : 'cloud_files') +
         ' f ON 1=1 WHERE w.id=1',

@@ -55,6 +55,18 @@ const mf = new Miniflare(
       ACCESS_AUD: 'prototype-test',
       ACCESS_ADMINS: 'admin@example.com',
     },
+    serviceBindings: {
+      ASSETS: async (request: Request) => {
+        const root = path.resolve('apps/dynamic/.cloudflare/output/v0/workers/default/assets');
+        const file = path.resolve(root, '.' + new URL(request.url).pathname);
+        if (!file.startsWith(root + path.sep)) return new Response(null, { status: 404 });
+        try {
+          return new Response(await fs.readFile(file));
+        } catch {
+          return new Response(null, { status: 404 });
+        }
+      },
+    },
     outboundService: async (request) =>
       request.url === 'https://fixture-team.cloudflareaccess.com/cdn-cgi/access/certs'
         ? Response.json({ keys: [jwk] })
@@ -91,6 +103,15 @@ try {
   assert.equal(denied.headers.get('Referrer-Policy'), 'same-origin');
   assert.equal((await request('/api/notes/', 'GET', undefined, false)).status, 401);
   assert.equal((await request('/_next/static/unknown.js', 'GET', undefined, false)).status, 401);
+  const chunk = (await fs.readdir(path.join(root, 'assets/_next/static/chunks'))).find((name) =>
+    name.endsWith('.js'),
+  )!;
+  const staticPath = '/_next/static/chunks/' + chunk;
+  assert.equal((await request(staticPath, 'GET', undefined, false)).status, 401);
+  const asset = await request(staticPath);
+  assert.equal(asset.status, 200);
+  assert.ok((await asset.text()).length > 0);
+  assert.equal(asset.headers.get('Cache-Control'), 'private, no-store');
   const created = await request('/api/notes/', 'POST', { text: 'A real D1 prototype note' });
   assert.equal(created.status, 201, await created.clone().text());
   const { id } = (await created.json()) as { id: string };

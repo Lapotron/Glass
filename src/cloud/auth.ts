@@ -67,6 +67,7 @@ export function checkOrigin(request: Request, env: CloudEnv) {
     path.startsWith('/authoring/') ||
     path.startsWith('/media/') ||
     path.startsWith('/m/') ||
+    path === '/api/search-console/oauth/callback' ||
     /^\/api\/(?:cloud-jobs\/[\w-]+\/file\/[\w.-]+|content\/[\w-]+\/download|backups\/[\w-]+\/download|notebook\/reset\/[\w-]+\/backup|jobs\/[\w-]+\/log)$/.test(
       path,
     );

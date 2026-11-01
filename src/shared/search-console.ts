@@ -7,6 +7,7 @@ export type SearchRow = {
 };
 export type SearchDataset = {
   id: string;
+  source?: 'google-api';
   name: string;
   property: string;
   dimension: string;
@@ -25,7 +26,10 @@ export type SearchImportReview = {
   expiresAt: string;
 };
 /** RFC 4180 fields, including quoted line breaks. Deliberately bounded before parsing. */
-export function parseCsv(source: string, options: { preserveEmptyRows?: boolean; maxFieldLength?: number } = {}): string[][] {
+export function parseCsv(
+  source: string,
+  options: { preserveEmptyRows?: boolean; maxFieldLength?: number } = {},
+): string[][] {
   if (source.length > 2000000) throw new Error('CSV is too large. Export a smaller report.');
   source = source.replace(/^\uFEFF/, '');
   const result: string[][] = [];
@@ -35,7 +39,12 @@ export function parseCsv(source: string, options: { preserveEmptyRows?: boolean;
     afterQuote = false;
   const finish = () => {
     row.push(cell);
-    if (row.some((v) => v.trim()) || options.preserveEmptyRows && (row.length > 1 || afterQuote || row.some((value) => value.length))) result.push(row);
+    if (
+      row.some((v) => v.trim()) ||
+      (options.preserveEmptyRows &&
+        (row.length > 1 || afterQuote || row.some((value) => value.length)))
+    )
+      result.push(row);
     row = [];
     cell = '';
     afterQuote = false;

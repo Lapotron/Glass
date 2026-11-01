@@ -14,7 +14,10 @@ export class HealthService {
     private jobs: Pick<JobService, 'connections' | 'jobs'>,
     private aca: Pick<AcaDeploymentService, 'summary'>,
     private fetcher?: typeof fetch,
-    private options: { persistIssues?: boolean } = {},
+    private options: {
+      persistIssues?: boolean;
+      studioBinding?: { bucketName?: string; available: boolean };
+    } = {},
   ) {}
   async report() {
     const { siteRevision } = await this.store.snapshot(),
@@ -62,7 +65,7 @@ export class HealthService {
           ? 'Pages target configured; publication verifies upload access.'
           : 'Set a Pages project when ready to publish.',
     });
-    const r2 = r2Readiness(site, credentials);
+    const r2 = r2Readiness(site, credentials, this.options.studioBinding);
     report.checks.push({
       id: 'r2',
       state:

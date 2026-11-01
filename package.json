@@ -53,7 +53,8 @@
     "cloud:preview:site": "tsx scripts/cloud-preview.ts site",
     "cloud:export": "tsx scripts/cloud-migrate.ts export",
     "cloud:import": "tsx scripts/cloud-import.ts",
-    "build:github-pages": "tsx scripts/github-pages.ts"
+    "build:github-pages": "tsx scripts/github-pages.ts",
+    "cloud:build:media": "tsx scripts/cloud-media-build.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1152.0",

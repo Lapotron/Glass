@@ -7,7 +7,11 @@ const privateHeaders = {
   'Referrer-Policy': 'same-origin',
 };
 export default {
-  async fetch(request: Request, env: AccessConfig, context: unknown) {
+  async fetch(
+    request: Request,
+    env: AccessConfig & { ASSETS: { fetch(request: Request): Promise<Response> } },
+    context: unknown,
+  ) {
     let admin;
     try {
       admin = await verifyAdmin(request, env);
@@ -36,7 +40,13 @@ export default {
     forwarded.headers.set('X-Glass-Admin', admin.email);
     let response: Response;
     try {
-      response = await handler.fetch(forwarded, env, context);
+      // Worker-first protects every asset; Vinext's fetch handler does not serve
+      // its generated client chunks itself, so forward them after JWT validation.
+      response =
+        ['GET', 'HEAD'].includes(request.method) &&
+        new URL(request.url).pathname.startsWith('/_next/static/')
+          ? await env.ASSETS.fetch(new Request(request.url, { method: request.method }))
+          : await handler.fetch(forwarded, env, context);
     } catch {
       return new Response('The private staging application is temporarily unavailable.', {
         status: 503,

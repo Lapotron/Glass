@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { generateKeyPair, SignJWT } from 'jose';
+import { createHash } from 'node:crypto';
 import { authenticate, checkOrigin } from '../src/cloud/auth.js';
 import type { CloudEnv } from '../src/cloud/types.js';
 
@@ -17,7 +18,23 @@ beforeAll(async () => {
   await bundleCloudWorker(
     path.join(folder, 'test.mjs'),
     `import {createCloudApp} from './src/cloud/worker.ts';
-    const app=createCloudApp({authenticate:async(request)=>({id:request.headers.has('X-Fixture-Read-Only')?'unseen-owner':'fixture-owner',email:'owner@fixture.test'}),connectionFetch:async(input)=>{
+    import {runGoogleSync} from './src/cloud/google-sync.ts';
+    const googleFetch=async(input,init)=>{
+      const url=String(input);
+      if(url==='https://oauth2.googleapis.com/token'){
+        return Response.json(new URLSearchParams(String(init.body)).get('grant_type')==='authorization_code'
+          ? {refresh_token:'fixture-refresh-token',scope:'https://www.googleapis.com/auth/webmasters.readonly'} : {access_token:'fixture-access-token'});
+      }
+      if(url.endsWith('/webmasters/v3/sites'))return Response.json({siteEntry:[{siteUrl:'https://blog.fixture.test/',permissionLevel:'siteOwner'}]});
+      if(url.includes('/searchAnalytics/query'))return Response.json({rows:[{keys:[JSON.parse(init.body).endDate],clicks:3,impressions:12,position:2}]});
+      throw new Error('Unexpected Google fixture request');
+    };
+    const mediaFetch=async(input)=>{
+      const request=new Request(input);
+      if(request.headers.has('Cookie')||request.headers.has('Authorization'))return new Response(null,{status:403});
+      return new Response(request.method==='HEAD'?null:'legacy',{headers:{'Content-Type':'image/webp','Cache-Control':'public, max-age=31536000, immutable'}});
+    };
+    const app=createCloudApp({mediaFetch,googleSearchFetch:googleFetch,authenticate:async(request)=>({id:request.headers.has('X-Fixture-Read-Only')?'unseen-owner':'fixture-owner',email:'owner@fixture.test'}),connectionFetch:async(input)=>{
       const request=new Request(input);
       if(request.method!=='GET')throw new Error('Fixture disallows external mutations.');
       if(new URL(request.url).hostname.endsWith('.r2.cloudflarestorage.com'))return new Response('<ListBucketResult><Key>private-object-canary</Key></ListBucketResult>');
@@ -26,9 +43,15 @@ beforeAll(async () => {
     export default {fetch:(request,env)=>{
       if(request.headers.has('X-Fixture-Runtime-Token'))env={...env,CLOUDFLARE_API_TOKEN:'fixture-runtime-token'};
       if(request.headers.has('X-Fixture-R2-Token'))env={...env,R2_ACCESS_KEY_ID:'fixture-s3-access',R2_SECRET_ACCESS_KEY:'fixture-private-s3-secret'};
+      if(request.headers.has('X-Fixture-Legacy-Media'))env={...env,MEDIA_LEGACY_COMPAT:'true'};
       if(request.headers.has('X-Fixture-Read-Only')){
         const database=env.DB;
         env={...env,DB:{prepare(sql){if(!/^SELECT\\b/i.test(sql.trim()))throw new Error('Fixture disallows database writes.');return database.prepare(sql)},batch(){throw new Error('Fixture disallows database writes.')},exec(){throw new Error('Fixture disallows database writes.')}}};
+      }
+      if(new URL(request.url).pathname==='/__fixture-google-sync'){return runGoogleSync(env,{fetcher:googleFetch}).then(()=>new Response('ok'))}
+      if(request.headers.has('X-Fixture-Navigate')){
+        const headers=new Headers(request.headers); headers.set('Sec-Fetch-Site','cross-site'); headers.set('Sec-Fetch-Mode','navigate'); headers.set('Sec-Fetch-Dest','document');
+        request=new Request(request,{headers});
       }
       return app.fetch(request,env);
     }};`,
@@ -42,6 +65,8 @@ beforeAll(async () => {
     bindings: {
       STUDIO_ORIGIN: origin,
       SITE_ORIGIN: 'https://blog.fixture.test',
+      MEDIA_ORIGIN: 'https://media.fixture.test',
+      MEDIA_PREFIX: 'media',
       WORKSPACE_ID: 'test',
       ACCESS_TEAM: 'fixture',
       ACCESS_AUD: 'test-aud',
@@ -78,6 +103,36 @@ afterAll(async () => {
 async function get(route: string) {
   return runtime.dispatchFetch(origin + route);
 }
+it('enables and removes hosted service alerts atomically without exposing webhook credentials', async () => {
+  let summary = (await (await get('/api/connections')).json()) as any;
+  const saved = await write(
+    '/api/connections',
+    {
+      revision: summary.revision,
+      set: {
+        alertWebhookUrl: 'https://hooks.fixture.test/private?secret=alert-url-canary',
+        alertWebhookToken: 'alert-token-canary',
+      },
+    },
+    'PUT',
+  );
+  expect(saved.status, await saved.clone().text()).toBe(200);
+  summary = await saved.json();
+  expect(summary.fields.alertWebhookUrl.configured).toBe(true);
+  expect(JSON.stringify(summary)).not.toContain('alert-url-canary');
+  expect(JSON.stringify(summary)).not.toContain('alert-token-canary');
+  expect(await (await get('/api/cloud/alerts')).json()).toMatchObject({ enabled: 1, attempts: 0 });
+  const removed = await write(
+    '/api/connections',
+    { revision: summary.revision, remove: ['alertWebhookUrl', 'alertWebhookToken'] },
+    'PUT',
+  );
+  expect(removed.status, await removed.clone().text()).toBe(200);
+  expect(await (await get('/api/cloud/alerts')).json()).toMatchObject({
+    enabled: 0,
+    pending_id: null,
+  });
+});
 it('initializes a new cloud notebook with its deployment account and no missing fixture portrait', async () => {
   const state = (await (await get('/api/bootstrap')).json()) as any;
   expect(state.site.cloudflare.accountId).toBe('a'.repeat(32));
@@ -593,4 +648,123 @@ it('performs native source checks, snapshots and reviewed imports with no CI job
   expect(pipeline.status).toBe(200);
   expect(await pipeline.json()).toEqual({ mode: 'studio', settling: false });
   expect(await db.prepare('SELECT COUNT(*) AS n FROM cloud_jobs').first('n')).toBe(before);
+});
+
+it('protects the Search Console OAuth start and binds its callback to the owner cookie', async () => {
+  const status = (await (await get('/api/search-console/oauth/status')).json()) as any;
+  const saved = await write(
+    '/api/search-console/oauth/settings',
+    {
+      revision: status.revision,
+      clientId: 'fixture.apps.googleusercontent.com',
+      clientSecret: 'private-client-secret',
+    },
+    'PUT',
+  );
+  expect(saved.status, await saved.clone().text()).toBe(200);
+  expect(await saved.text()).not.toContain('private-client-secret');
+  const started = await write('/api/search-console/oauth/start', {});
+  expect(started.status, await started.clone().text()).toBe(200);
+  const cookie = started.headers.get('set-cookie') || '';
+  expect(cookie).toContain('glass_gsc=');
+  expect(cookie).toMatch(/HttpOnly/i);
+  expect(cookie).toMatch(/Secure/i);
+  expect(cookie).toMatch(/SameSite=Lax/i);
+  const url = new URL(((await started.json()) as any).url);
+  const callback = await runtime.dispatchFetch(
+    origin +
+      '/api/search-console/oauth/callback?state=' +
+      encodeURIComponent(url.searchParams.get('state')!) +
+      '&code=fixture',
+    {
+      headers: { 'X-Fixture-Navigate': '1' },
+    },
+  );
+  expect(callback.status).toBeGreaterThanOrEqual(400);
+  expect(await callback.text()).not.toContain('private-client-secret');
+  const accepted = await runtime.dispatchFetch(
+    origin +
+      '/api/search-console/oauth/callback?state=' +
+      encodeURIComponent(url.searchParams.get('state')!) +
+      '&code=fixture',
+    {
+      redirect: 'manual',
+      headers: { Cookie: cookie.split(';')[0], 'X-Fixture-Navigate': '1' },
+    },
+  );
+  expect(accepted.status, await accepted.clone().text()).toBe(303);
+  expect((await (await get('/api/search-console/oauth/properties')).json()) as any).toEqual({
+    properties: ['https://blog.fixture.test/'],
+  });
+  const connected = (await (await get('/api/search-console/oauth/status')).json()) as any;
+  const configured = await write(
+    '/api/search-console/oauth/settings',
+    { revision: connected.revision, property: 'https://blog.fixture.test/', autoSync: true },
+    'PUT',
+  );
+  expect(configured.status, await configured.clone().text()).toBe(200);
+  await Promise.all([
+    runtime.dispatchFetch(origin + '/__fixture-google-sync'),
+    runtime.dispatchFetch(origin + '/__fixture-google-sync'),
+  ]);
+  const reports = (await (await get('/api/search-console')).json()) as any[];
+  expect(reports.filter((report) => report.source === 'google-api')).toHaveLength(1);
+  expect((await (await get('/api/search-console/oauth/status')).json()) as any).toMatchObject({
+    connected: true,
+    autoSync: true,
+    property: 'https://blog.fixture.test/',
+  });
+  const db = await runtime.getD1Database('DB');
+  const row = await db
+    .prepare(
+      "SELECT encrypted FROM cloud_files WHERE path='.studio/services/search-console-oauth.json'",
+    )
+    .first<{ encrypted: number }>();
+  expect(row?.encrypted).toBe(1);
+});
+
+it('serves only approved media on the shared Worker hostname and never exposes Studio routes', async () => {
+  const bucket = (await runtime.getR2Bucket('BUCKET')) as unknown as CloudEnv['BUCKET'];
+  const bytes = new TextEncoder().encode('approved-media');
+  const sha = createHash('sha256').update(bytes).digest('hex');
+  const key = 'media/v2/' + sha + '.webp';
+  await bucket.put(key, bytes, {
+    customMetadata: { sha256: sha, 'glass-public': '1' },
+    httpMetadata: {
+      contentType: 'image/webp',
+      cacheControl: 'public, max-age=31536000, immutable',
+    },
+  });
+  const mediaOrigin = 'https://media.fixture.test';
+  const image = await runtime.dispatchFetch(mediaOrigin + '/' + key, {
+    headers: { Origin: 'https://blog.fixture.test' },
+  });
+  expect(image.status).toBe(200);
+  expect(image.headers.get('access-control-allow-origin')).toBe('*');
+  expect(image.headers.get('content-type')).toBe('image/webp');
+  expect(await image.text()).toBe('approved-media');
+  const part = await runtime.dispatchFetch(mediaOrigin + '/' + key, {
+    headers: { Range: 'bytes=0-3' },
+  });
+  expect(part.status).toBe(206);
+  expect(await part.text()).toBe('appr');
+  for (const path of [
+    '/api/bootstrap',
+    '/__ci/pipeline',
+    '/workspace/blobs/' + sha,
+    '/media/v2/' + 'a'.repeat(64) + '.webp',
+  ])
+    expect((await runtime.dispatchFetch(mediaOrigin + path)).status).toBe(404);
+  const compat = await runtime.dispatchFetch(
+    mediaOrigin + '/media/v2/' + 'b'.repeat(64) + '.webp',
+    {
+      headers: {
+        'X-Fixture-Legacy-Media': '1',
+        Cookie: 'private=canary',
+        Authorization: 'Bearer private-canary',
+      },
+    },
+  );
+  expect(compat.status).toBe(200);
+  expect(await compat.text()).toBe('legacy');
 });

@@ -2,6 +2,8 @@ import { proxyAnalytics, analyticsStatus } from './analytics.js';
 import { serviceReadiness } from './service-readiness.js';
 import { CloudMediaService } from './cloud-media.js';
 import { SearchConsoleService } from './search-console.js';
+import { GoogleSearchConsole } from './google-search-console.js';
+import { getCookie, setCookie, deleteCookie } from 'hono/cookie';
 import { HealthService } from './health.js';
 import { applicationRoot as installedApplicationRoot } from './configuration.js';
 import { AcaDeploymentService } from './aca-deployment.js';
@@ -27,7 +29,11 @@ import sharp from 'sharp';
 import { MediaService, inspectImage } from '../engine/media.js';
 import { z, ZodError } from 'zod';
 import { Store, ConflictError, contained, digest } from '../engine/store.js';
-import { renderMarkdown, renderMathPreviews, renderSourceMathPreviews } from '../engine/markdown.js';
+import {
+  renderMarkdown,
+  renderMathPreviews,
+  renderSourceMathPreviews,
+} from '../engine/markdown.js';
 import { mathSettingsSchema } from '../shared/math-authoring.js';
 import { entryAliasRoutes } from '../shared/entry-routes.js';
 import { mathPreviewLimits } from '../shared/math-preview.js';
@@ -61,7 +67,11 @@ import { attachmentTypes, attachmentFile, imageFile } from '../shared/attachment
 import { NotebookReset } from '../engine/notebook-reset.js';
 import { discussionThemePreview } from '../engine/discussion-preview.js';
 import { AcaConnectionError } from './aca-fetch.js';
-import { developmentReloadScript, withDevelopmentReload, type DevelopmentPreview } from './development.js';
+import {
+  developmentReloadScript,
+  withDevelopmentReload,
+  type DevelopmentPreview,
+} from './development.js';
 
 const mime: Record<string, string> = {
   ...attachmentTypes,
@@ -156,6 +166,7 @@ export async function createApp(
     options.protectionFetch,
   );
   const searchConsole = new SearchConsoleService(root);
+  const googleSearch = new GoogleSearchConsole(root);
   const health = new HealthService(store, jobs, acaDeployment, options.analyticsFetch);
   jobs.externalBusy = () => cloudMedia.busy;
   const automaticBackups = new BackupScheduler(backups, idle, () => changes.emit('filesystem'));
@@ -180,6 +191,29 @@ export async function createApp(
   );
   if (options.watchFiles !== false) scheduler.start();
   if (options.watchFiles !== false) automaticBackups.start();
+  let googleSyncRunning = false;
+  const googleSyncTimer =
+    options.watchFiles === false
+      ? undefined
+      : setInterval(() => {
+          if (googleSyncRunning) return;
+          googleSyncRunning = true;
+          void (async () => {
+            const status = await googleSearch.status();
+            if (
+              status.autoSync &&
+              status.connected &&
+              status.property &&
+              (!status.lastSync || Date.now() - Date.parse(status.lastSync) >= 86400000)
+            )
+              await googleSearch.sync(new URL((await store.snapshot()).site.url).origin);
+          })()
+            .catch(() => {})
+            .finally(() => {
+              googleSyncRunning = false;
+            });
+        }, 15 * 60000);
+  googleSyncTimer?.unref();
   app.use('*', async (c, next) => {
     const url = new URL(c.req.url);
     if (!['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname))
@@ -187,7 +221,12 @@ export async function createApp(
     const origin = c.req.header('Origin');
     if (origin && origin !== url.origin)
       return c.json({ error: 'Cross-origin access is not allowed.' }, 403);
-    if (c.req.header('Sec-Fetch-Site') === 'cross-site')
+    const googleReturn =
+      c.req.path === '/api/search-console/oauth/callback' &&
+      c.req.method === 'GET' &&
+      c.req.header('Sec-Fetch-Mode') === 'navigate' &&
+      c.req.header('Sec-Fetch-Dest') === 'document';
+    if (c.req.header('Sec-Fetch-Site') === 'cross-site' && !googleReturn)
       return c.json({ error: 'Open Studio directly on this computer.' }, 403);
     if (
       c.req.path.startsWith('/api/') &&
@@ -201,15 +240,39 @@ export async function createApp(
   });
   if (options.development) {
     const development = options.development;
-    app.get('/__dev/reload.js', (c) => c.body(developmentReloadScript, 200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Cache-Control': 'no-store' }));
-    app.get('/__dev/events', (c) => streamSSE(c, async (stream) => {
-      await new Promise<void>((resolve) => {
-        const send = () => { void stream.writeSSE({ data: JSON.stringify({ generation: development.generation, error: development.error }) }).catch(cleanup); };
-        const heartbeat = setInterval(send, 10_000);
-        function cleanup() { clearInterval(heartbeat); development.events.off('update', send); development.events.off('close', cleanup); resolve(); }
-        development.events.on('update', send); development.events.on('close', cleanup); stream.onAbort(cleanup); send();
-      });
-    }));
+    app.get('/__dev/reload.js', (c) =>
+      c.body(developmentReloadScript, 200, {
+        'Content-Type': 'text/javascript; charset=utf-8',
+        'Cache-Control': 'no-store',
+      }),
+    );
+    app.get('/__dev/events', (c) =>
+      streamSSE(c, async (stream) => {
+        await new Promise<void>((resolve) => {
+          const send = () => {
+            void stream
+              .writeSSE({
+                data: JSON.stringify({
+                  generation: development.generation,
+                  error: development.error,
+                }),
+              })
+              .catch(cleanup);
+          };
+          const heartbeat = setInterval(send, 10_000);
+          function cleanup() {
+            clearInterval(heartbeat);
+            development.events.off('update', send);
+            development.events.off('close', cleanup);
+            resolve();
+          }
+          development.events.on('update', send);
+          development.events.on('close', cleanup);
+          stream.onAbort(cleanup);
+          send();
+        });
+      }),
+    );
   }
   app.use('/api/*', (c, next) =>
     c.req.path === '/api/backups/review'
@@ -267,6 +330,46 @@ export async function createApp(
   );
   app.get('/api/health', async (c) => c.json(await health.report()));
   app.get('/api/search-console', async (c) => c.json(await searchConsole.list()));
+  app.get('/api/search-console/oauth/status', async (c) => c.json(await googleSearch.status()));
+  app.put('/api/search-console/oauth/settings', async (c) =>
+    c.json(
+      await googleSearch.configure(
+        await c.req.json(),
+        new URL((await store.snapshot()).site.url).origin,
+      ),
+    ),
+  );
+  app.get('/api/search-console/oauth/properties', async (c) =>
+    c.json({
+      properties: await googleSearch.properties(new URL((await store.snapshot()).site.url).origin),
+    }),
+  );
+  app.post('/api/search-console/oauth/start', async (c) => {
+    const origin = new URL(c.req.url).origin,
+      result = await googleSearch.start(origin, 'local');
+    setCookie(c, 'glass_gsc', result.cookie, {
+      httpOnly: true,
+      secure: origin.startsWith('https:'),
+      sameSite: 'Lax',
+      path: '/api/search-console/oauth/callback',
+      maxAge: 600,
+    });
+    return c.json({ url: result.url });
+  });
+  app.get('/api/search-console/oauth/callback', async (c) => {
+    await googleSearch.finish(
+      new URL(c.req.url).origin,
+      'local',
+      c.req.query('state') || '',
+      getCookie(c, 'glass_gsc') || '',
+      c.req.query('code') || '',
+    );
+    deleteCookie(c, 'glass_gsc', { path: '/api/search-console/oauth/callback' });
+    return c.redirect('/studio/#analytics', 303);
+  });
+  app.post('/api/search-console/oauth/sync', async (c) =>
+    c.json(await googleSearch.sync(new URL((await store.snapshot()).site.url).origin)),
+  );
   app.get('/api/search-console/:id', async (c) =>
     c.json(await searchConsole.read(c.req.param('id'))),
   );
@@ -384,12 +487,26 @@ export async function createApp(
   app.post('/api/authoring/math-preview', async (c) => {
     const request = await c.req.json();
     if (typeof request.source === 'string') {
-      const input = z.object({
-        source: z.string().max(2 * 1024 * 1024),
-        ranges: z.array(z.object({from:z.number().int().nonnegative(),to:z.number().int().nonnegative()}).strict()).max(mathPreviewLimits.count),
-        math: mathSettingsSchema.optional(),
-      }).strict().parse(request);
-      return c.json({results:await renderSourceMathPreviews(input.source,input.ranges,input.math)});
+      const input = z
+        .object({
+          source: z.string().max(2 * 1024 * 1024),
+          ranges: z
+            .array(
+              z
+                .object({
+                  from: z.number().int().nonnegative(),
+                  to: z.number().int().nonnegative(),
+                })
+                .strict(),
+            )
+            .max(mathPreviewLimits.count),
+          math: mathSettingsSchema.optional(),
+        })
+        .strict()
+        .parse(request);
+      return c.json({
+        results: await renderSourceMathPreviews(input.source, input.ranges, input.math),
+      });
     }
     const { expressions, math } = z
       .object({
@@ -434,7 +551,14 @@ export async function createApp(
       .strict()
       .parse(await c.req.json());
     return c.json({
-      results: await renderComponentPreviews(input.source, input.blocks, root, c.req.raw.signal, input.math, diagramPresentation((await store.read()).site.theme)),
+      results: await renderComponentPreviews(
+        input.source,
+        input.blocks,
+        root,
+        c.req.raw.signal,
+        input.math,
+        diagramPresentation((await store.read()).site.theme),
+      ),
     });
   });
   app.post('/api/content/batch', async (c) => {
@@ -854,7 +978,10 @@ export async function createApp(
     model.entries = model.entries.filter(
       (entry) => entry.status === 'published' || entry.id === data.entryId,
     );
-    route = entryAliasRoutes(model.entries,model.site.collections).get(route) || collectionRedirect(route, model.site.collections) || route;
+    route =
+      entryAliasRoutes(model.entries, model.site.collections).get(route) ||
+      collectionRedirect(route, model.site.collections) ||
+      route;
     const renderer = await createRenderer(model, {
       includeDrafts: !!data.entryId || !!data.projects,
       preview: true,
@@ -929,8 +1056,10 @@ export async function createApp(
     c.json(await backupUploads.part(c.req.param('upload'), Number(c.req.param('part')), c.req.raw)),
   );
   app.post('/api/backups/uploads/:upload/complete', async (c) => {
-    const input=z.object({requestId:z.uuid().optional()}).parse(c.req.raw.body ? await c.req.json() : {});
-    return c.json(await backupUploads.complete(c.req.param('upload'),!!input.requestId));
+    const input = z
+      .object({ requestId: z.uuid().optional() })
+      .parse(c.req.raw.body ? await c.req.json() : {});
+    return c.json(await backupUploads.complete(c.req.param('upload'), !!input.requestId));
   });
   app.delete('/api/backups/uploads/:upload', async (c) =>
     c.json(await backupUploads.discard(c.req.param('upload'))),
@@ -1342,12 +1471,17 @@ export async function createApp(
       const stat = await fs.stat(file);
       if (stat.isDirectory()) return c.redirect(c.req.path + '/');
       const bytes = await fs.readFile(file);
-      return c.newResponse(options.development && path.extname(file) === '.html' ? withDevelopmentReload(bytes.toString('utf8')) : bytes, {
-        headers: {
-          'Content-Type': mime[path.extname(file)] || 'application/octet-stream',
-          'Cache-Control': 'no-cache',
+      return c.newResponse(
+        options.development && path.extname(file) === '.html'
+          ? withDevelopmentReload(bytes.toString('utf8'))
+          : bytes,
+        {
+          headers: {
+            'Content-Type': mime[path.extname(file)] || 'application/octet-stream',
+            'Cache-Control': 'no-cache',
+          },
         },
-      });
+      );
     } catch {
       try {
         return c.html(await fs.readFile(path.join(base, '404.html'), 'utf8'), 404);
@@ -1379,6 +1513,7 @@ export async function createApp(
     close: () => {
       scheduler.close();
       automaticBackups.close();
+      if (googleSyncTimer) clearInterval(googleSyncTimer);
       watcher?.close();
       clearTimeout(timer);
       changes.removeAllListeners();

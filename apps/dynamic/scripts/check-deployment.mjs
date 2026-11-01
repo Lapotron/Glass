@@ -4,6 +4,7 @@ for (const key of [
   'GLASS_ACCESS_TEAM',
   'GLASS_ACCESS_AUD',
   'GLASS_ACCESS_ADMINS',
+  'GLASS_STAGING_DATABASE_ID',
 ]) {
   if (!process.env[key])
     throw new Error(
@@ -12,6 +13,8 @@ for (const key of [
 }
 if (!/^[a-z0-9-]+$/i.test(process.env.GLASS_ACCESS_TEAM))
   throw new Error('Use the Zero Trust team name without a URL.');
+if (!/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(process.env.GLASS_STAGING_DATABASE_ID))
+  throw new Error('Use the verified, separate staging D1 database ID.');
 if (process.env.GLASS_STAGING_ACCESS_VERIFIED !== 'true')
   throw new Error(
     'Verify the Access application before deploying staging. No deployment was started.',

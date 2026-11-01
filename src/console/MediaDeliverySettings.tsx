@@ -52,6 +52,27 @@ export function MediaDeliverySettings({
       </Field>
       {value.mode === 'r2' && (
         <>
+          {(isCloudStudio() || value.transport === 'studio-binding') && (
+            <Field label={t('R2 upload connection')}>
+              <select
+                value={value.transport || 's3'}
+                onChange={(event) =>
+                  update({ transport: event.target.value as Delivery['transport'] })
+                }
+              >
+                <option value="s3" data-ui={'S3 access keys'}>
+                  {t('S3 access keys')}
+                </option>
+                <option
+                  value="studio-binding"
+                  disabled={!isCloudStudio()}
+                  data-ui={'Studio bucket binding'}
+                >
+                  {t('Studio bucket binding')}
+                </option>
+              </select>
+            </Field>
+          )}
           <div className="field-row">
             <Field label={t('R2 bucket')}>
               <input
@@ -70,9 +91,15 @@ export function MediaDeliverySettings({
           </div>
           <Field
             label={t('Public media origin')}
-            help={t(
-              'An HTTPS custom domain connected to this bucket, such as https://media.example.com.',
-            )}
+            help={
+              value.transport === 'studio-binding'
+                ? t(
+                    'A separate HTTPS media hostname routed to your Studio Worker, such as https://media.example.com.',
+                  )
+                : t(
+                    'An HTTPS custom domain connected to this bucket, such as https://media.example.com.',
+                  )
+            }
           >
             <input
               type="url"
@@ -90,9 +117,13 @@ export function MediaDeliverySettings({
                   : t('Credentials stay on this computer')}
               </h3>
               <p>
-                {t(
-                  'Save bucket-scoped S3 credentials in Site settings → Credentials. Media uploads run during publication.',
-                )}
+                {value.transport === 'studio-binding'
+                  ? t(
+                      'Published media uses the Studio bucket binding. The Studio Worker serves approved files on the media hostname; separate S3 keys are not required.',
+                    )
+                  : t(
+                      'Save bucket-scoped S3 credentials in Site settings → Credentials. Media uploads run during publication.',
+                    )}
               </p>
             </div>
           </div>
@@ -127,9 +158,13 @@ export function MediaDeliverySettings({
           {status && (
             <p className="help" role="status">
               {status.configured
-                ? t(
-                    'Bucket read access verified. Upload permission and CDN delivery are checked during publication.',
-                  )
+                ? value.transport === 'studio-binding'
+                  ? t(
+                      'Studio bucket binding verified. Public delivery is checked during publication.',
+                    )
+                  : t(
+                      'Bucket read access verified. Upload permission and CDN delivery are checked during publication.',
+                    )
                 : 'Still needed: ' + status.missing.join(', ') + '.'}
             </p>
           )}

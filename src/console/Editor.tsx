@@ -431,7 +431,7 @@ export function Editor({
   const viewRef = useRef<EditorView | null>(null),
     sourceScroll = useRef<ReturnType<EditorView['scrollSnapshot']> | null>(null),
     revision = useRef(entry.revision),
-    baseline = useRef(JSON.stringify({ metadata: metadataOf(entry), body: entry.body }));
+    baseline = useRef({ metadata: metadataOf(entry), body: entry.body });
   const latest = useRef({ metadata, body });
   latest.current = { metadata, body };
   const pending = useRef<Promise<void> | null>(null),
@@ -439,8 +439,11 @@ export function Editor({
     onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
   const savingSnapshot = useRef<{ metadata: EntryMeta; body: string } | null>(null);
-  const serialized = JSON.stringify({ metadata, body });
-  const dirty = serialized !== baseline.current;
+  const sameSource = (
+    a: { metadata: EntryMeta; body: string },
+    b: { metadata: EntryMeta; body: string },
+  ) => a.body === b.body && JSON.stringify(a.metadata) === JSON.stringify(b.metadata);
+  const dirty = !sameSource({ metadata, body }, baseline.current);
   const previewController = useLivePreview({
     identity: entry.id,
     source: body,
@@ -492,9 +495,8 @@ export function Editor({
   }
   async function flush() {
     if (pending.current) await pending.current;
-    const payload = latest.current,
-      value = JSON.stringify(payload);
-    if (value === baseline.current) return;
+    const payload = latest.current;
+    if (sameSource(payload, baseline.current)) return;
     if (blocked.current)
       throw new Error('Resolve the external file change before saving or building.');
     const parsed = entrySchema.safeParse(payload.metadata);
@@ -512,7 +514,7 @@ export function Editor({
           revision: revision.current,
         });
         revision.current = saved.revision;
-        baseline.current = value;
+        baseline.current = payload;
         onSavedRef.current(saved);
         setError('');
         onStatus('All changes saved');
@@ -533,7 +535,7 @@ export function Editor({
       pending.current = null;
       savingSnapshot.current = null;
     }
-    if (JSON.stringify(latest.current) !== baseline.current) await flush();
+    if (!sameSource(latest.current, baseline.current)) await flush();
   }
   const flushLatest = useRef(flush);
   flushLatest.current = flush;
@@ -553,7 +555,7 @@ export function Editor({
       });
     }, 900);
     return () => clearTimeout(timeout);
-  }, [serialized, conflict]);
+  }, [metadata, body, conflict]);
   useEffect(() => {
     if (entry.revision === revision.current) return;
     if (
@@ -562,7 +564,7 @@ export function Editor({
         sourceKey(savingSnapshot.current)
     )
       return;
-    if (JSON.stringify(latest.current) !== baseline.current || pending.current) {
+    if (!sameSource(latest.current, baseline.current) || pending.current) {
       blocked.current = true;
       setConflict(true);
       setError(
@@ -571,7 +573,7 @@ export function Editor({
     } else {
       revision.current = entry.revision;
       const next = metadataOf(entry);
-      baseline.current = JSON.stringify({ metadata: next, body: entry.body });
+      baseline.current = { metadata: next, body: entry.body };
       setMetadata(next);
       setBody(entry.body);
     }
@@ -581,7 +583,7 @@ export function Editor({
       void flushLatest.current().catch((e) => setError(e.message));
     };
     const unload = (event: BeforeUnloadEvent) => {
-      if (JSON.stringify(latest.current) !== baseline.current) {
+      if (!sameSource(latest.current, baseline.current)) {
         event.preventDefault();
         event.returnValue = '';
       }
@@ -607,7 +609,7 @@ export function Editor({
   function reload() {
     const next = metadataOf(entry);
     revision.current = entry.revision;
-    baseline.current = JSON.stringify({ metadata: next, body: entry.body });
+    baseline.current = { metadata: next, body: entry.body };
     blocked.current = false;
     setMetadata(next);
     setBody(entry.body);
@@ -1005,7 +1007,7 @@ export function Editor({
           onRestored={(saved) => {
             const next = metadataOf(saved);
             revision.current = saved.revision;
-            baseline.current = JSON.stringify({ metadata: next, body: saved.body });
+            baseline.current = { metadata: next, body: saved.body };
             latest.current = { metadata: next, body: saved.body };
             setMetadata(next);
             setBody(saved.body);
@@ -1031,7 +1033,7 @@ export function Editor({
             const converted = entries[0],
               next = { metadata: metadataOf(converted), body: converted.body };
             revision.current = converted.revision;
-            baseline.current = JSON.stringify(next);
+            baseline.current = next;
             latest.current = next;
             setMetadata(next.metadata);
             setBody(next.body);

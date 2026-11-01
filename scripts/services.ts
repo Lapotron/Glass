@@ -51,6 +51,7 @@ try {
         accessTeam: z.string().regex(/^[a-z0-9-]+$/i),
         accessAudience: z.string().min(10).max(500),
         adminEmails: z.array(z.string().email()).min(1).max(10),
+        databaseId: z.uuid(),
       });
       const configPath = path.join(store.root, '.studio/services/staging.json');
       let settings: z.infer<typeof schema>;
@@ -58,7 +59,7 @@ try {
         settings = schema.parse(JSON.parse(await fs.readFile(configPath, 'utf8')));
       } catch {
         throw new Error(
-          'Save the Access team, audience and adminEmails in private .studio/services/staging.json. See docs/dynamic-prototype.md. No deployment was started.',
+          'Save the Access team, audience, adminEmails and separate databaseId in private .studio/services/staging.json. See docs/dynamic-prototype.md. No deployment was started.',
         );
       }
       const credentials = await connections.values();
@@ -83,6 +84,30 @@ try {
         throw new Error(
           'Create and verify the staging.example.com Access application before deploying the private Worker.',
         );
+      const databaseResponse = await fetch(
+        'https://api.cloudflare.com/client/v4/accounts/' +
+          readiness.accountId +
+          '/d1/database/' +
+          settings.databaseId,
+        {
+          headers: { Authorization: 'Bearer ' + credentials.CLOUDFLARE_API_TOKEN },
+          redirect: 'error',
+          signal: AbortSignal.timeout(15000),
+        },
+      );
+      const database = (await databaseResponse.json()) as {
+        success?: boolean;
+        result?: { uuid?: string; name?: string };
+      };
+      if (
+        !databaseResponse.ok ||
+        !database.success ||
+        database.result?.uuid !== settings.databaseId ||
+        database.result?.name !== 'glass-dynamic-prototype'
+      )
+        throw new Error(
+          'The selected D1 database is not the dedicated staging database. No deployment was started.',
+        );
       const environment: NodeJS.ProcessEnv = {
         ...process.env,
         CLOUDFLARE_API_TOKEN: credentials.CLOUDFLARE_API_TOKEN,
@@ -90,6 +115,7 @@ try {
         GLASS_ACCESS_TEAM: settings.accessTeam,
         GLASS_ACCESS_AUD: settings.accessAudience,
         GLASS_ACCESS_ADMINS: settings.adminEmails.join(','),
+        GLASS_STAGING_DATABASE_ID: settings.databaseId,
         GLASS_STAGING_ACCESS_VERIFIED: 'true',
         CI: 'true',
         WRANGLER_SEND_METRICS: 'false',

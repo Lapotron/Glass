@@ -11,7 +11,11 @@ export interface Database {
   exec(sql: string): Promise<unknown>;
 }
 export interface Bucket {
-  head(key: string): Promise<null | { size: number; customMetadata?: Record<string, string> }>;
+  head(key: string): Promise<null | {
+    size: number;
+    customMetadata?: Record<string, string>;
+    httpMetadata?: { contentType?: string; cacheControl?: string };
+  }>;
   createMultipartUpload(key: string): Promise<MultipartUpload>;
   resumeMultipartUpload(key: string, uploadId: string): MultipartUpload;
   get(
@@ -61,6 +65,10 @@ export type CloudEnv = {
   CI_TOKEN: string;
   PREVIEW?: string;
   STORAGE_BUDGET_BYTES?: string;
+  PRIVATE_BUCKET_NAME?: string;
+  MEDIA_ORIGIN?: string;
+  MEDIA_PREFIX?: string;
+  MEDIA_LEGACY_COMPAT?: string;
 };
 export type Actor = { id: string; email: string };
 export type FileRecord = {

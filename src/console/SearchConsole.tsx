@@ -1,10 +1,254 @@
 import { useEffect, useState } from 'react';
 import { t, uiNumber } from '../shared/i18n.js';
 import { Button } from '../shared/ui.js';
-import { Field, ErrorBox } from './components.js';
-import { api, send } from './api.js';
+import { Field, ErrorBox, ToggleField } from './components.js';
+import { api, send, isCloudStudio } from './api.js';
 import type { SearchDataset, SearchImportReview } from '../shared/search-console.js';
 type Summary = Omit<SearchDataset, 'rows'> & { rowCount: number };
+type GoogleStatus = {
+  revision: string;
+  configured: boolean;
+  connected: boolean;
+  property: string;
+  autoSync: boolean;
+  lastSync: string | null;
+};
+
+function GoogleSearchConnection({ onSync }: { onSync: () => Promise<unknown> }) {
+  const [status, setStatus] = useState<GoogleStatus>();
+  const [clientId, setClientId] = useState(''),
+    [clientSecret, setClientSecret] = useState('');
+  const [properties, setProperties] = useState<string[]>([]),
+    [choice, setChoice] = useState('');
+  const [busy, setBusy] = useState(false),
+    [error, setError] = useState(''),
+    [message, setMessage] = useState('');
+  const [removing, setRemoving] = useState(false);
+  const refresh = async () => {
+    const next = await api<GoogleStatus>('search-console/oauth/status');
+    setStatus(next);
+    setChoice(next.property);
+  };
+  useEffect(() => {
+    void refresh().catch((e) => setError(e.message));
+  }, []);
+  const perform = async (work: () => Promise<void>) => {
+    setBusy(true);
+    setError('');
+    setMessage('');
+    try {
+      await work();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = async (change: Record<string, unknown>) => {
+    if (!status) return;
+    const next = await send<GoogleStatus>('search-console/oauth/settings', 'PUT', {
+      revision: status.revision,
+      ...change,
+    });
+    setStatus(next);
+    setChoice(next.property);
+  };
+  return (
+    <div className="settings-card">
+      <h3>{t('Connect Google Search Console')}</h3>
+      <p className="help">
+        {t(
+          'Optional read-only access imports finalized daily search reports. Existing CSV reports remain separate.',
+        )}
+      </p>
+      <p className="help">
+        {t('Create a Google OAuth web client and add this authorized redirect URI:')}{' '}
+        <code>{location.origin}/api/search-console/oauth/callback</code>.{' '}
+        <a
+          href="https://developers.google.com/identity/protocols/oauth2/web-server"
+          target="_blank"
+          rel="noreferrer"
+        >
+          {t('Google setup guide')}
+        </a>
+      </p>
+      <ErrorBox error={error} />
+      {message && <p role="status">{message}</p>}
+      {status && (
+        <>
+          <p className="help">
+            {t(
+              status.connected
+                ? 'Google is connected.'
+                : status.configured
+                  ? 'Client saved; connect Google to continue.'
+                  : 'No Google client configured.',
+            )}
+          </p>
+          <div className="field-row">
+            <Field label={t('Google OAuth client ID')}>
+              <input
+                value={clientId}
+                autoComplete="off"
+                onChange={(e) => setClientId(e.target.value)}
+              />
+            </Field>
+            <Field label={t('Google OAuth client secret')}>
+              <input
+                type="password"
+                value={clientSecret}
+                autoComplete="new-password"
+                onChange={(e) => setClientSecret(e.target.value)}
+              />
+            </Field>
+          </div>
+          <div className="page-actions">
+            <Button
+              disabled={busy || !clientId || !clientSecret}
+              onClick={() =>
+                void perform(async () => {
+                  await save({ clientId, clientSecret });
+                  setClientId('');
+                  setClientSecret('');
+                  setProperties([]);
+                })
+              }
+            >
+              {t('Save Google client')}
+            </Button>
+            <Button
+              disabled={busy || !status.configured}
+              onClick={() =>
+                void perform(async () => {
+                  const result = await send<{ url: string }>(
+                    'search-console/oauth/start',
+                    'POST',
+                    {},
+                  );
+                  const url = new URL(result.url);
+                  if (
+                    url.origin !== 'https://accounts.google.com' ||
+                    url.pathname !== '/o/oauth2/v2/auth'
+                  )
+                    throw new Error('Unexpected Google authorization URL.');
+                  location.assign(url.href);
+                })
+              }
+            >
+              {t(status.connected ? 'Reconnect Google' : 'Connect Google')}
+            </Button>
+            {status.connected && (
+              <Button
+                disabled={busy}
+                onClick={() =>
+                  void perform(async () => {
+                    await save({ disconnect: true });
+                    setProperties([]);
+                  })
+                }
+              >
+                {t('Disconnect Google')}
+              </Button>
+            )}
+            {status.configured && (
+              <Button
+                disabled={busy}
+                onClick={() => {
+                  if (!removing) {
+                    setRemoving(true);
+                    return;
+                  }
+                  void perform(async () => {
+                    await save({ clearClient: true });
+                    setProperties([]);
+                    setRemoving(false);
+                  });
+                }}
+              >
+                {t(removing ? 'Confirm removal' : 'Remove Google client')}
+              </Button>
+            )}
+          </div>
+          {status.connected && (
+            <>
+              <div className="page-actions">
+                <Button
+                  disabled={busy}
+                  onClick={() =>
+                    void perform(async () => {
+                      setProperties(
+                        (await api<{ properties: string[] }>('search-console/oauth/properties'))
+                          .properties,
+                      );
+                    })
+                  }
+                >
+                  {t('Load verified properties')}
+                </Button>
+              </div>
+              <Field label={t('Google property')}>
+                <select value={choice} onChange={(e) => setChoice(e.target.value)}>
+                  <option value="">{t('Choose a property')}</option>
+                  {[...new Set([status.property, ...properties].filter(Boolean))].map((item) => (
+                    <option key={item} value={item}>
+                      {item}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <div className="page-actions">
+                <Button
+                  disabled={busy || !choice || choice === status.property}
+                  onClick={() => void perform(() => save({ property: choice }))}
+                >
+                  {t('Save property')}
+                </Button>
+                <Button
+                  disabled={busy || !status.property}
+                  onClick={() =>
+                    void perform(async () => {
+                      const result = await send<{ rows: number; noData: boolean }>(
+                        'search-console/oauth/sync',
+                        'POST',
+                        {},
+                      );
+                      await refresh();
+                      await onSync();
+                      setMessage(
+                        t(
+                          result.noData
+                            ? 'Google returned no finalized data for this period.'
+                            : 'Search report refreshed.',
+                        ),
+                      );
+                    })
+                  }
+                >
+                  {t('Sync now')}
+                </Button>
+              </div>
+              <ToggleField
+                label={t('Refresh Google data daily')}
+                help={t(
+                  isCloudStudio()
+                    ? 'Runs privately in hosted Studio when enabled.'
+                    : 'Runs while local Studio is open.',
+                )}
+                checked={status.autoSync}
+                onChange={(value) => void perform(() => save({ autoSync: value }))}
+              />
+              {status.lastSync && (
+                <p className="help">
+                  {t('Last successful sync')}: {new Date(status.lastSync).toLocaleString()}
+                </p>
+              )}
+            </>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 export function SearchConsole({ property }: { property: string }) {
   const today = new Date().toISOString().slice(0, 10);
   const [datasets, setDatasets] = useState<Summary[]>([]),
@@ -40,6 +284,7 @@ export function SearchConsole({ property }: { property: string }) {
         )}
       </p>
       <ErrorBox error={error} />
+      <GoogleSearchConnection onSync={load} />
       <div className="field-row">
         <Field label={t('Report from')}>
           <input

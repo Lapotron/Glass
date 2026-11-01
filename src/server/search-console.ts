@@ -51,13 +51,16 @@ export class SearchConsoleService {
       throw new Error('Search datasets cannot use symbolic links.');
     return JSON.parse(await fs.readFile(file, 'utf8'));
   }
-  review(input: {
-    source: string;
-    name: string;
-    property: string;
-    from: string;
-    to: string;
-  }): SearchImportReview {
+  review(
+    input: {
+      source: string;
+      name: string;
+      property: string;
+      from: string;
+      to: string;
+    },
+    origin: 'csv' | 'google-api' = 'csv',
+  ): SearchImportReview {
     for (const day of [input.from, input.to])
       if (
         !/^\d{4}-\d{2}-\d{2}$/.test(day) ||
@@ -76,10 +79,15 @@ export class SearchConsoleService {
     )
       throw new Error('CSV dates do not match the selected report range.');
     const id = digest(
-      JSON.stringify([input.property, parsed.dimension, input.from, input.to]),
+      JSON.stringify(
+        origin === 'csv'
+          ? [input.property, parsed.dimension, input.from, input.to]
+          : [origin, input.property, parsed.dimension],
+      ),
     ).slice(0, 24);
     const dataset: SearchDataset = {
       id,
+      ...(origin === 'google-api' ? { source: origin } : {}),
       name: input.name.slice(0, 200),
       property: input.property,
       dimension: parsed.dimension,
@@ -98,8 +106,11 @@ export class SearchConsoleService {
       expiresAt: new Date(Date.now() + 10 * 60000).toISOString(),
     };
   }
-  async prepare(input: Parameters<SearchConsoleService['review']>[0]) {
-    const review = this.review(input);
+  async prepare(
+    input: Parameters<SearchConsoleService['review']>[0],
+    origin: 'csv' | 'google-api' = 'csv',
+  ) {
+    const review = this.review(input, origin);
     let previous = '';
     try {
       previous = (await this.read(review.dataset.id)).revision;

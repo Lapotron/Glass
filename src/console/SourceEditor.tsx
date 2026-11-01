@@ -85,7 +85,7 @@ import {
 import { sourceAnalyzer } from './source-worker.js';
 import { sourceSearch, sourceMatches } from './source-search.js';
 import { editingCommands } from './source-commands.js';
-import { SourceMinimap } from './SourceMinimap.js';
+import { SourceMinimap, minimapLengths } from './SourceMinimap.js';
 import { sourceFormatter } from './source-formatter.js';
 import { MarkdownDiff } from './MarkdownDiff.js';
 import { LinkComposer } from './LinkComposer.js';
@@ -134,6 +134,7 @@ export function CodeEditor({
   const host = useRef<HTMLDivElement>(null),
     workspace = useRef<HTMLDivElement>(null),
     id = useId();
+  const lastPublishedSource = useRef(value);
   const targets = useRef<CompletionTargets>({ links: [], media: [] }),
     scope = useRef('');
   const config = useRef(new Compartment());
@@ -327,6 +328,7 @@ export function CodeEditor({
           sourceLanguage(),
           sourceHighlighting,
           sourceStructure,
+          minimapLengths,
           pseudocodeStructure,
           bracketMatching(),
           rectangularSelection(),
@@ -357,7 +359,10 @@ export function CodeEditor({
             'aria-multiline': 'true',
           }),
           EditorView.updateListener.of((update) => {
-            if (update.docChanged) change.current(update.state.doc.toString());
+            if (update.docChanged) {
+              lastPublishedSource.current = update.state.doc.toString();
+              change.current(lastPublishedSource.current);
+            }
             updateRef.current?.(update);
             if (update.selectionSet || update.docChanged) {
               const selection = update.state.selection.main,
@@ -498,7 +503,7 @@ export function CodeEditor({
   }, []);
   useEffect(() => {
     const view = viewRef.current;
-    if (view && value !== view.state.doc.toString())
+    if (view && value !== lastPublishedSource.current && value !== view.state.doc.toString())
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: value } });
   }, [value]);
   useEffect(() => {

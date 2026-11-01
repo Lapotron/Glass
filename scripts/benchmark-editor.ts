@@ -18,9 +18,13 @@ const option = (name: string, fallback: string) => {
 const runs = Math.max(1, Math.min(5, Number(option('--runs', '3'))));
 const baseline = option('--baseline', '');
 const scenario = option('--scenario', 'mixed');
-if (!['mixed', 'pseudocode'].includes(scenario)) throw new Error('Scenario must be mixed or pseudocode.');
+if (!['mixed', 'pseudocode'].includes(scenario))
+  throw new Error('Scenario must be mixed or pseudocode.');
 const baseFiles = [
+  'Editor.tsx',
   'SourceEditor.tsx',
+  'pseudocode-intelligence.ts',
+  'source-language.ts',
   'LivePreview.tsx',
   'source-analysis.ts',
   'source-analysis.worker.ts',
@@ -56,7 +60,10 @@ function workload(count: number) {
         `Source line ${index}: explain a useful idea with clear and carefully chosen words.`,
       );
   }
-  return rows.join('\n') + (scenario === 'pseudocode' ? '\n\n```pseudo\n' + quicksortSource + '\nRET' : '\n');
+  return (
+    rows.join('\n') +
+    (scenario === 'pseudocode' ? '\n\n```pseudo\n' + quicksortSource + '\nRET' : '\n')
+  );
 }
 async function variant(label: string, revision?: string) {
   const temporary = await fs.mkdtemp(path.join(os.tmpdir(), 'glass-editor-benchmark-'));
@@ -235,8 +242,7 @@ if (baseline) results.push(await variant('baseline', baseline));
 results.push(await variant('current'));
 const report = {
   createdAt: new Date().toISOString(),
-  method:
-    `beforeinput to next animation frame; isolated notebooks; 1500 ms viewport settling then ${runs} repeated typing runs; same current server/compiler and outer Studio; baseline editor source files overlaid only when a revision is supplied; ${scenario === 'pseudocode' ? 'typing in an active Quicksort fence appended to the mixed corpus' : 'mixed rich-content corpus'}`,
+  method: `beforeinput to next animation frame; isolated notebooks; 1500 ms viewport settling then ${runs} repeated typing runs; same current server/compiler and outer Studio; baseline editor source files overlaid only when a revision is supplied; ${scenario === 'pseudocode' ? 'typing in an active Quicksort fence appended to the mixed corpus' : 'mixed rich-content corpus'}`,
   results,
 };
 await fs.mkdir('.studio/reports', { recursive: true });

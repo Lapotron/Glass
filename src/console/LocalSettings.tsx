@@ -20,6 +20,8 @@ const emptyCredentials = () => ({
   acaReportToken: '',
   r2AccessKeyId: '',
   r2SecretAccessKey: '',
+  alertWebhookUrl: '',
+  alertWebhookToken: '',
 });
 const labels: Record<ConnectionField, string> = {
   cloudflareApiToken: 'Cloudflare API token',
@@ -28,6 +30,8 @@ const labels: Record<ConnectionField, string> = {
   acaReportToken: 'ACA private report token',
   r2AccessKeyId: 'R2 access key ID',
   r2SecretAccessKey: 'R2 secret access key',
+  alertWebhookUrl: 'Service alerts webhook URL',
+  alertWebhookToken: 'Service alerts bearer token',
 };
 export function usePrivateFlush(
   flushRef: FlushRef,
@@ -73,6 +77,12 @@ export function ConnectionControls({
     [message, setMessage] = useState('');
   const latest = useRef({ draft, remove });
   const [services, setServices] = useState<ServiceReadiness | null>(null);
+  const [alertStatus, setAlertStatus] = useState<{
+    enabled: number;
+    attempts: number;
+    last_status: number | null;
+    last_attempt: number | null;
+  } | null>(null);
   const serviceLabels = {
     workers: t('Workers read access'),
     d1: t('D1 read access'),
@@ -96,6 +106,10 @@ export function ConnectionControls({
   }
   useEffect(() => {
     void load();
+    if (isCloudStudio())
+      void api<typeof alertStatus>('cloud/alerts')
+        .then(setAlertStatus)
+        .catch(() => setAlertStatus(null));
   }, []);
   async function save() {
     if (pending.current) await pending.current;
@@ -126,6 +140,10 @@ export function ConnectionControls({
         setDraft(emptyCredentials());
         setRemove([]);
         setMessage('Credentials saved privately on this computer.');
+        if (isCloudStudio())
+          void api<typeof alertStatus>('cloud/alerts')
+            .then(setAlertStatus)
+            .catch(() => setAlertStatus(null));
         onSaved();
       } catch (e) {
         setError((e as Error).message);
@@ -234,52 +252,66 @@ export function ConnectionControls({
             )}
       </p>
       <fieldset className="private-fields" disabled={busy || !summary}>
-        {connectionFields.map((key) => (
-          <Field
-            key={key}
-            label={labels[key]}
-            help={
-              remove.includes(key)
-                ? t('Removal pending.')
-                : summary?.fields[key].source === 'studio'
-                  ? isCloudStudio()
-                    ? t('Saved privately in Cloudflare.')
-                    : t('Saved locally.')
-                  : summary?.fields[key].source === 'environment'
+        {connectionFields
+          .filter((key) => isCloudStudio() || !key.startsWith('alertWebhook'))
+          .map((key) => (
+            <Field
+              key={key}
+              label={
+                key === 'alertWebhookUrl'
+                  ? t('Service alerts webhook URL')
+                  : key === 'alertWebhookToken'
+                    ? t('Service alerts bearer token')
+                    : t(labels[key])
+              }
+              help={
+                remove.includes(key)
+                  ? t('Removal pending.')
+                  : summary?.fields[key].source === 'studio'
                     ? isCloudStudio()
-                      ? t('Provided by the Cloudflare deployment.')
-                      : t('Available from the server environment.')
-                    : t('No credential saved.')
-            }
-          >
-            <div className="input-with-button">
-              <input
-                type={shown[key] ? 'text' : 'password'}
-                autoComplete="off"
-                spellCheck={false}
-                aria-label={labels[key]}
-                value={draft[key]}
-                placeholder={
-                  summary?.fields[key].configured
-                    ? t('Enter a replacement to change it')
-                    : t('Paste credential')
-                }
-                onChange={(event) => {
-                  setDraft((current) => ({ ...current, [key]: event.target.value }));
-                  setMessage('');
-                }}
-              />
-              <Button
-                className="small"
-                icon={shown[key] ? 'EyeOff' : 'Eye'}
-                disabled={!draft[key]}
-                onClick={() => setShown((current) => ({ ...current, [key]: !current[key] }))}
-              >
-                {shown[key] ? t('Hide') : t('Show')}
-              </Button>
-            </div>
-          </Field>
-        ))}
+                      ? t('Saved privately in Cloudflare.')
+                      : t('Saved locally.')
+                    : summary?.fields[key].source === 'environment'
+                      ? isCloudStudio()
+                        ? t('Provided by the Cloudflare deployment.')
+                        : t('Available from the server environment.')
+                      : t('No credential saved.')
+              }
+            >
+              <div className="input-with-button">
+                <input
+                  type={shown[key] ? 'text' : 'password'}
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-label={
+                    key === 'alertWebhookUrl'
+                      ? t('Service alerts webhook URL')
+                      : key === 'alertWebhookToken'
+                        ? t('Service alerts bearer token')
+                        : t(labels[key])
+                  }
+                  value={draft[key]}
+                  placeholder={
+                    summary?.fields[key].configured
+                      ? t('Enter a replacement to change it')
+                      : t('Paste credential')
+                  }
+                  onChange={(event) => {
+                    setDraft((current) => ({ ...current, [key]: event.target.value }));
+                    setMessage('');
+                  }}
+                />
+                <Button
+                  className="small"
+                  icon={shown[key] ? 'EyeOff' : 'Eye'}
+                  disabled={!draft[key]}
+                  onClick={() => setShown((current) => ({ ...current, [key]: !current[key] }))}
+                >
+                  {shown[key] ? t('Hide') : t('Show')}
+                </Button>
+              </div>
+            </Field>
+          ))}
         <div className="private-settings-actions">
           <Button
             className="small"
@@ -325,8 +357,39 @@ export function ConnectionControls({
           >
             {remove.includes('r2AccessKeyId') ? t('Undo R2 removal') : t('Remove R2 credentials')}
           </Button>
+          {isCloudStudio() && (
+            <Button
+              className="small"
+              icon="Trash2"
+              disabled={
+                summary?.fields.alertWebhookUrl.source !== 'studio' &&
+                summary?.fields.alertWebhookToken.source !== 'studio' &&
+                !remove.includes('alertWebhookUrl')
+              }
+              onClick={() => removing(['alertWebhookUrl', 'alertWebhookToken'])}
+            >
+              {remove.includes('alertWebhookUrl')
+                ? t('Keep service alerts')
+                : t('Remove service alerts')}
+            </Button>
+          )}
         </div>
       </fieldset>
+      {isCloudStudio() && (
+        <p className="help">
+          {t(
+            'Service alerts are off until a webhook URL is saved. Hosted Studio checks ACA, storage and publication status about every five minutes, and sends issue and recovery events without reader data. The webhook token is optional. A total Studio outage needs independent external monitoring.',
+          )}
+          {alertStatus?.enabled
+            ? ' ' +
+              (alertStatus.attempts
+                ? t('Delivery is retrying; last HTTP status: {value0}.', {
+                    value0: alertStatus.last_status || '—',
+                  })
+                : t('Alerts are enabled.'))
+            : ''}
+        </p>
+      )}
       <div className="private-settings-actions">
         <Button
           className="small"

@@ -1,0 +1,2 @@
+CREATE TABLE IF NOT EXISTS cloud_search_sync (id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL DEFAULT 0,next_due INTEGER NOT NULL DEFAULT 0,lease TEXT,lease_until INTEGER NOT NULL DEFAULT 0,last_attempt INTEGER,last_error TEXT);
+INSERT OR IGNORE INTO cloud_search_sync(id) VALUES(1);

@@ -5,7 +5,7 @@ import type { BuildResult, SiteConfig } from '../shared/contracts.js';
 import type { MediaDetailsManifest } from '../shared/media-details.js';
 import { digest } from './store.js';
 import { escapeHtml, scriptJson } from '../shared/utils.js';
-import { attachmentTypes } from '../shared/attachments.js';
+import { publicMediaTypes } from '../shared/public-media-policy.js';
 export type DeliveryAsset = {
   file: string;
   key: string;
@@ -15,15 +15,7 @@ export type DeliveryAsset = {
   contentType: string;
 };
 export type DeliveryManifest = { version: 1; assets: DeliveryAsset[] };
-const types: Record<string, string> = {
-  ...attachmentTypes,
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.webp': 'image/webp',
-  '.avif': 'image/avif',
-  '.gif': 'image/gif',
-};
+const types = publicMediaTypes;
 export function mediaResolver(assets: DeliveryAsset[], canonical: string) {
   const lookup = new Map(
     assets.flatMap((asset) => {

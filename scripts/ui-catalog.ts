@@ -42,17 +42,42 @@ for (const file of sourceFiles) {
     } else if (ts.isArrayLiteralExpression(node)) node.elements.forEach(phrases);
   };
   const walk = (node: ts.Node) => {
-    const toolsFile = file.includes('/site/tools/') || file.endsWith('/site/tools.ts') || file.endsWith('/shared/tools-catalog.ts') || file.endsWith('/shared/tools-crypto.ts');
+    const toolsFile =
+      file.includes('/site/tools/') ||
+      file.endsWith('/site/tools.ts') ||
+      file.endsWith('/shared/tools-catalog.ts') ||
+      file.endsWith('/shared/tools-crypto.ts');
     if (toolsFile) {
-      if (ts.isCallExpression(node) && node.expression.getText(source).endsWith('.cancel') && node.arguments[0]) phrases(node.arguments[0]);
-      if (ts.isPropertyAssignment(node) && ['label', 'group', 'description'].includes(node.name.getText(source))) phrases(node.initializer);
-      if (ts.isNewExpression(node) && node.expression.getText(source) === 'Error' && node.arguments?.[0]) phrases(node.arguments[0]);
+      if (
+        ts.isCallExpression(node) &&
+        node.expression.getText(source).endsWith('.cancel') &&
+        node.arguments[0]
+      )
+        phrases(node.arguments[0]);
+      if (
+        ts.isPropertyAssignment(node) &&
+        ['label', 'group', 'description'].includes(node.name.getText(source))
+      )
+        phrases(node.initializer);
+      if (
+        ts.isNewExpression(node) &&
+        node.expression.getText(source) === 'Error' &&
+        node.arguments?.[0]
+      )
+        phrases(node.arguments[0]);
       if (ts.isCallExpression(node)) {
         const name = node.expression.getText(source);
-        if (['button', 'field', 'input', 'choice', 'parameter', 'select'].includes(name) && node.arguments[0]) phrases(node.arguments[0]);
+        if (
+          ['button', 'field', 'input', 'choice', 'parameter', 'select'].includes(name) &&
+          node.arguments[0]
+        )
+          phrases(node.arguments[0]);
         if (name === 'element' && node.arguments[2]) phrases(node.arguments[2]);
-        const rows = name === 'choice' ? node.arguments[2] : name === 'select' ? node.arguments[1] : undefined;
-        if (rows && ts.isArrayLiteralExpression(rows)) for (const row of rows.elements) if (ts.isArrayLiteralExpression(row) && row.elements[1]) phrases(row.elements[1]);
+        const rows =
+          name === 'choice' ? node.arguments[2] : name === 'select' ? node.arguments[1] : undefined;
+        if (rows && ts.isArrayLiteralExpression(rows))
+          for (const row of rows.elements)
+            if (ts.isArrayLiteralExpression(row) && row.elements[1]) phrases(row.elements[1]);
       }
     }
     if (
@@ -96,6 +121,12 @@ for (const file of sourceFiles) {
       )
         phrases(node.right);
     }
+    if (
+      file.endsWith('/aca/segment-cohorts.ts') &&
+      ts.isPropertyAssignment(node) &&
+      node.name.getText(source) === 'unavailable'
+    )
+      phrases(node.initializer);
     if (file.endsWith('/server/health.ts')) {
       if (
         ts.isPropertyAssignment(node) &&
@@ -176,12 +207,15 @@ for (const item of componentBrowserItems) {
   add(item.label, 'src/console/component-browser.ts');
   add(item.description, 'src/console/component-browser.ts');
 }
-for (const item of pseudocodeSnippets) add(item.description, 'src/console/pseudocode-intelligence.ts');
+for (const item of pseudocodeSnippets)
+  add(item.description, 'src/console/pseudocode-intelligence.ts');
 for (const name of ['view', 'search', 'merge', 'autocomplete', 'language', 'lint']) {
   const file = 'node_modules/@codemirror/' + name + '/dist/index.js';
   const text = await fs.readFile(file, 'utf8');
-  for (const match of text.matchAll(/\.phrase\("([^"\n]+)"/g))
-    { add(match[1], 'src/console/CodeMirror'); add(match[1], 'src/site/tools/editor.ts'); }
+  for (const match of text.matchAll(/\.phrase\("([^"\n]+)"/g)) {
+    add(match[1], 'src/console/CodeMirror');
+    add(match[1], 'src/site/tools/editor.ts');
+  }
 }
 const english = Object.fromEntries([...usages.keys()].sort().map((key) => [key, key]));
 const publicKey = (key: string) =>

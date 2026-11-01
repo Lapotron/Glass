@@ -1,8 +1,48 @@
 import { useEffect, useRef, useMemo, useState, type MutableRefObject } from 'react';
 import { EditorView } from '@codemirror/view';
+import { StateField, type Text } from '@codemirror/state';
 import type { SourceAnalysis } from './source-analysis.js';
 import { sourceMatches } from './source-search.js';
 const noMarkers: { line: number; end: number; color: string }[] = [];
+
+const lineLengths = (doc: Text) => {
+  const result: number[] = [],
+    lines = doc.iterLines();
+  while (!lines.next().done) result.push(lines.value.trim().length);
+  return result;
+};
+
+/** Reuse unchanged lines instead of splitting the entire document on every keystroke. */
+export const minimapLengths = StateField.define<number[]>({
+  create: (state) => lineLengths(state.doc),
+  update(previous, transaction) {
+    if (!transaction.docChanged) return previous;
+    const ranges: { from: number; to: number; nextFrom: number; nextTo: number }[] = [];
+    transaction.changes.iterChangedRanges((from, to, nextFrom, nextTo) => {
+      const range = {
+        from: transaction.startState.doc.lineAt(from).number - 1,
+        to: transaction.startState.doc.lineAt(to).number - 1,
+        nextFrom: transaction.newDoc.lineAt(nextFrom).number - 1,
+        nextTo: transaction.newDoc.lineAt(nextTo).number - 1,
+      };
+      const last = ranges.at(-1);
+      if (last && (range.from <= last.to || range.nextFrom <= last.nextTo)) {
+        last.to = Math.max(last.to, range.to);
+        last.nextTo = Math.max(last.nextTo, range.nextTo);
+      } else ranges.push(range);
+    });
+    if (ranges.some((range) => range.nextTo - range.nextFrom > 5000))
+      return lineLengths(transaction.newDoc);
+    const result = previous.slice();
+    for (const range of ranges.reverse()) {
+      const inserted: number[] = [];
+      for (let line = range.nextFrom; line <= range.nextTo; line++)
+        inserted.push(transaction.newDoc.line(line + 1).text.trim().length);
+      result.splice(range.from, range.to - range.from + 1, ...inserted);
+    }
+    return result;
+  },
+});
 
 export function SourceMinimap({
   viewRef,
@@ -25,7 +65,11 @@ export function SourceMinimap({
     rail = useRef<HTMLDivElement>(null),
     dragOffset = useRef(0);
   const [bounds, setBounds] = useState({ top: 0, height: 1, line: 1, extent: 1, cursor: 0 });
-  const lengths = useMemo(() => source.split('\n').map((line) => line.trim().length), [source]);
+  const cachedLengths = viewRef.current?.state.field(minimapLengths, false);
+  const lengths = useMemo(
+    () => cachedLengths || source.split('\n').map((line) => line.trim().length),
+    [source, cachedLengths],
+  );
   const latest = useRef({ lengths, analysis, markers });
   latest.current = { lengths, analysis, markers };
   const paintRequest = useRef<((base?: boolean) => void) | null>(null);
@@ -76,15 +120,28 @@ export function SourceMinimap({
         const style = getComputedStyle(host);
         context.fillStyle = style.getPropertyValue('--faint');
         context.globalAlpha = 0.35;
-        lengths.forEach((length, line) => {
-          if (length)
-            context.fillRect(
-              7,
-              line * unit,
-              Math.min(width - 16, Math.max(2, length * 0.6)),
-              Math.max(0.5, Math.min(2, unit - 0.3)),
-            );
-        });
+        // Several source lines can project onto one display pixel. Draw one
+        // representative mark per pixel instead of thousands of overlapping marks.
+        if (unit < 1) {
+          for (let pixel = 0; pixel < Math.ceil(unit * lengths.length); pixel++) {
+            const start = Math.floor(pixel / unit),
+              end = Math.min(lengths.length, Math.ceil((pixel + 1) / unit));
+            let longest = 0;
+            for (let line = start; line < end; line++) longest = Math.max(longest, lengths[line]);
+            if (longest)
+              context.fillRect(7, pixel, Math.min(width - 16, Math.max(2, longest * 0.6)), 0.5);
+          }
+        } else {
+          lengths.forEach((length, line) => {
+            if (length)
+              context.fillRect(
+                7,
+                line * unit,
+                Math.min(width - 16, Math.max(2, length * 0.6)),
+                Math.max(0.5, Math.min(2, unit - 0.3)),
+              );
+          });
+        }
         context.globalAlpha = 0.85;
         context.fillStyle = style.getPropertyValue('--accent-text');
         analysis.headings.forEach((heading) =>

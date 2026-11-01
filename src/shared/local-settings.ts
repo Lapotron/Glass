@@ -5,6 +5,8 @@ export const connectionFields = [
   'acaReportToken',
   'r2AccessKeyId',
   'r2SecretAccessKey',
+  'alertWebhookUrl',
+  'alertWebhookToken',
 ] as const;
 export type ConnectionField = (typeof connectionFields)[number];
 export type ConnectionSummary = {

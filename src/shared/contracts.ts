@@ -530,6 +530,8 @@ export const siteSchema = z.object({
   mediaDelivery: z
     .object({
       mode: z.enum(['pages', 'r2']).default('pages'),
+      // Absent on older notebooks: continue using the existing S3 transport.
+      transport: z.enum(['s3', 'studio-binding']).optional(),
       bucket: z
         .string()
         .regex(/^$|^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/)

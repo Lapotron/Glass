@@ -376,6 +376,16 @@ it('verifies CDN bytes, MIME, immutable caching and public read CORS without tre
   const noCors = createR2Transport(model.site, env, async () => response(bytes, ''));
   await expect(noCors.verify(asset)).rejects.toThrow(/CORS Policy.*purge the media hostname/);
   noCors.close?.();
+  const headWithoutCors = createR2Transport(model.site, env, async (_url, options) =>
+    response(bytes, options?.method === 'HEAD' ? '' : '*'),
+  );
+  await expect(headWithoutCors.verify(asset)).rejects.toThrow(/GET\/HEAD CORS/);
+  headWithoutCors.close?.();
+  const warmWithoutCors = createR2Transport(model.site, env, async (_url, options) =>
+    response(bytes, new Headers(options?.headers).has('Range') ? '' : '*'),
+  );
+  await expect(warmWithoutCors.verify(asset)).rejects.toThrow(/GET\/HEAD CORS/);
+  warmWithoutCors.close?.();
 });
 it('publishes only after all images verify and preserves an uploaded URL when deployment verification fails', async () => {
   await publishedPicture();

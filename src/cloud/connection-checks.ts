@@ -3,7 +3,7 @@ import type { SiteConfig } from '../shared/contracts.js';
 import type { CloudflareConnection } from '../shared/local-settings.js';
 import { r2Readiness } from '../server/r2-readiness.js';
 import { PagesConnection } from './pages.js';
-import { CloudError } from './types.js';
+import { CloudError, type Bucket } from './types.js';
 import { r2RequestError } from '../server/r2-errors.js';
 
 /** These checks run on the authenticated Studio Worker, independently of its build queue. */
@@ -11,14 +11,29 @@ export async function checkR2Connection(
   site: SiteConfig,
   credentials: NodeJS.ProcessEnv,
   fetcher: typeof fetch = fetch,
+  binding?: { bucket: Bucket; bucketName?: string },
 ) {
-  const readiness = r2Readiness(site, credentials);
+  const readiness = r2Readiness(
+    site,
+    credentials,
+    binding ? { available: !!binding.bucket, bucketName: binding.bucketName } : undefined,
+  );
   if (!readiness.configured)
     throw new Error(
       'R2 needs: ' +
         readiness.missing.join(', ') +
-        '. Set the account in Site settings → Publishing and the bucket/domain in R2 media delivery; save S3 credentials in Credentials.',
+        (site.mediaDelivery.transport === 'studio-binding'
+          ? '. Configure the Studio private bucket name and select that same bucket in R2 media delivery.'
+          : '. Set the account in Site settings → Publishing and the bucket/domain in R2 media delivery; save S3 credentials in Credentials.'),
     );
+  if (site.mediaDelivery.transport === 'studio-binding') {
+    // Probe a fixed nonexistent key; never list or reveal private notebook objects.
+    await binding!.bucket.head('media-binding-check/never-created');
+    return {
+      ok: true,
+      message: 'Studio bucket binding verified. CDN delivery is checked during publication.',
+    };
+  }
   const client = new AwsClient({
     accessKeyId: credentials.R2_ACCESS_KEY_ID!,
     secretAccessKey: credentials.R2_SECRET_ACCESS_KEY!,

@@ -18,6 +18,7 @@ import { meterDatabase } from '../src/aca/usage.js';
 import { handleAnalytics } from '../src/aca/worker.js';
 import { parseSegment, segmentSql } from '../src/shared/aca-segments.js';
 import { segmentOptions } from '../src/aca/segment-reports.js';
+import { segmentCohorts } from '../src/aca/segment-cohorts.js';
 let root: string, mf: Miniflare, db: D1Database;
 const token = 'a-private-report-token-32-characters-long';
 
@@ -272,7 +273,7 @@ it('uses committed joint segments for intersections, event attribution, geograph
   expect(options.options.country).toEqual(['FR', 'US']);
   const history = await analyticsReport(db, site, 'audience', url({ country: ['US'] }));
   expect(history.cohorts).toEqual([]);
-  expect(history.notes.some((n) => n.includes('unavailable with segment'))).toBe(true);
+  expect(history.notes.some((n) => n.includes('require optional reader history'))).toBe(true);
   // New records cannot leak through a failed summary generation.
   await post('US', 'desktop', 'google', 'en');
   const failing: D1Database = {
@@ -317,6 +318,125 @@ it('marks older independent summaries unavailable for combined segment filters',
   );
   expect(report.coverage).toMatchObject({ days: 1, coveredDays: 0, missingDays: [date] });
   expect(report.series).toEqual([]);
+});
+it('computes consented segmented cohorts from first matching visits and counts returns on other devices', async () => {
+  const site = 'segment-cohorts',
+    now = Date.now();
+  const day = (offset: number) => new Date(now - offset * 86400000).toISOString().slice(0, 10);
+  const first = day(3),
+    second = day(2),
+    end = day(1),
+    version = now - 1000;
+  const statements = [];
+  for (const date of [first, second]) {
+    statements.push(
+      db
+        .prepare('INSERT INTO summaries(site,day,refreshed_at) VALUES(?,?,?)')
+        .bind(site, date, version),
+    );
+    statements.push(
+      db
+        .prepare('INSERT INTO segment_coverage(site,day,refreshed_at) VALUES(?,?,?)')
+        .bind(site, date, version),
+    );
+  }
+  for (let i = 0; i < 12; i++) {
+    const visitor = 'cohort-browser-' + i;
+    statements.push(
+      db
+        .prepare('INSERT INTO visitors(site,id,first_day,last_day,days) VALUES(?,?,?,?,?)')
+        .bind(site, visitor, day(30), second, JSON.stringify([first, second])),
+    );
+    for (const [date, device] of [
+      [first, 'desktop'],
+      [second, 'phone'],
+    ]) {
+      statements.push(
+        db
+          .prepare(
+            `INSERT INTO views(site,id,day,content,revision,route,seq,active,depth,buckets,sections,end_seen,ended,consent,visitor,source,campaign,device,language,first_at,updated_at,audience) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          )
+          .bind(
+            site,
+            visitor + date,
+            date,
+            'example',
+            'a'.repeat(64),
+            '/post/example/',
+            0,
+            0,
+            0,
+            '[]',
+            '{}',
+            0,
+            0,
+            'opt-in',
+            visitor,
+            'direct',
+            '',
+            device,
+            'en',
+            Date.parse(date),
+            Date.parse(date),
+            JSON.stringify({ country: i === 11 ? 'FR' : 'US' }),
+          ),
+      );
+    }
+  }
+  await db.batch(statements);
+  const range = {
+    from: first,
+    to: end,
+    content: 'example',
+    revision: '',
+    segment: { country: ['US'], device: ['desktop'] },
+  };
+  const result = await segmentCohorts(db, site, range, now);
+  expect(result.selected).toBe(11);
+  expect(result.returning).toBe(11);
+  expect(result.cohorts).toEqual([
+    {
+      cohort: first.slice(0, 7),
+      browsers: 11,
+      day1: 100,
+      day7: -1,
+      day30: -1,
+      day90: -1,
+      day180: -1,
+    },
+  ]);
+  const report = await analyticsReport(
+    db,
+    site,
+    'audience',
+    new URL(
+      'https://aca.test/?' +
+        new URLSearchParams({
+          from: first,
+          to: end,
+          content: 'example',
+          segment: JSON.stringify(range.segment),
+        }),
+    ),
+    now,
+    false,
+    true,
+  );
+  expect(report.metrics.find((item) => item.label === 'Returning browsers')?.value).toBe(11);
+  expect(report.cohorts).toEqual(result.cohorts);
+  expect((await segmentCohorts(db, site, { ...range, from: day(91) }, now)).unavailable).toContain(
+    '90-day',
+  );
+  await db
+    .prepare('INSERT INTO dirty_days(site,day,updated_at) VALUES(?,?,?)')
+    .bind(site, second, now)
+    .run();
+  expect((await segmentCohorts(db, site, range, now)).unavailable).toContain('committed summary');
+  await db.batch(
+    ['dirty_days', 'segment_coverage', 'summaries', 'views', 'visitors'].map((table) =>
+      db.prepare(`DELETE FROM ${table} WHERE site=?`).bind(site),
+    ),
+  );
 });
 it('collects cumulative active time once, deduplicates events, gates reports, and forgets opt-in raw state', async () => {
   const visitor = crypto.randomUUID(),

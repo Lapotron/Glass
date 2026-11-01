@@ -96,7 +96,7 @@ Names, domains, bindings and the production branch are configurable. Git pushes 
 
 Editing, uploads, browser previews, history, backups and imports use direct private storage APIs without CI. Snapshots share immutable media blobs; portable exports leave out generated artifacts and caches. Hosting includes storage totals, retention, safe cleanup and seven-day recovery for deleted history.
 
-Local Studio also retains [Cloudflare Pages Direct Upload](docs/publishing.md). Optional ACA and the [isolated Vinext prototype](docs/dynamic-prototype.md) have their own infrastructure; Vinext is an evaluation app.
+Local Studio also retains [Cloudflare Pages Direct Upload](docs/publishing.md). An optional [shared-bucket media hostname](docs/shared-media.md) can use the existing Studio Worker; review its cutover limitations before using an existing hostname. ACA and the [isolated Vinext prototype](docs/dynamic-prototype.md) are optional and require separate infrastructure only when deployed.
 
 ## Documentation
 
@@ -105,7 +105,7 @@ Local Studio also retains [Cloudflare Pages Direct Upload](docs/publishing.md). 
 | Writing           | [Markdown reference](docs/markdown-reference.md) · [Editor workspace](docs/editor-workspace.md) · [Authoring and MCP](docs/mcp-authoring.md) |
 | Technical content | [Math](docs/math-authoring.md) · [Pseudocode](docs/pseudocode.md) · [Diagrams](docs/diagrams.md) · [Charts](docs/charts.md)                  |
 | Site management   | [Settings](docs/site-settings.md) · [Media](docs/media.md) · [Studio operations](docs/studio-operations.md) · [Recovery](docs/recovery.md)   |
-| Hosting           | [GitHub Pages](docs/github-pages.md) · [Hosted Studio](docs/hosted-studio.md) · [Pages publishing](docs/publishing.md) · [ACA](docs/aca.md)                                         |
+| Hosting           | [GitHub Pages](docs/github-pages.md) · [Hosted Studio](docs/hosted-studio.md) · [Pages publishing](docs/publishing.md) · [ACA](docs/aca.md)  |
 | Development       | [Contracts](docs/contracts.md) · [Design system](docs/design-system.md) · [Production performance](docs/production-performance.md)           |
 
 ## Development checks

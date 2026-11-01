@@ -20,6 +20,70 @@ export type MediaTransport = {
 };
 export { r2Readiness } from './r2-readiness.js';
 import { r2Readiness } from './r2-readiness.js';
+
+/** Verify both methods and a warmed read; published bytes must match the frozen artifact. */
+export async function verifyPublicMedia(
+  site: SiteConfig,
+  asset: DeliveryAsset,
+  request: typeof fetch = fetch,
+) {
+  const origin = new URL(site.url).origin;
+  let lastError: unknown;
+  const check = async (method: 'GET' | 'HEAD', range = false) => {
+    const response = await request(asset.url, {
+      method,
+      credentials: 'omit',
+      redirect: 'manual',
+      headers: { Origin: origin, ...(range ? { Range: 'bytes=0-0' } : {}) },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (
+      !response.ok ||
+      response.headers.get('content-type')?.split(';')[0] !== asset.contentType.split(';')[0]
+    ) {
+      await response.body?.cancel();
+      throw new Error('Media domain did not return the expected file.');
+    }
+    if (!['*', origin].includes(response.headers.get('access-control-allow-origin') || '')) {
+      await response.body?.cancel();
+      throw new Error(
+        'The media domain needs public GET/HEAD CORS for downloads. Open the R2 bucket’s Settings → CORS Policy or update the media Worker response. If the policy was just changed, purge the media hostname’s cached files in Cloudflare.',
+      );
+    }
+    if (!response.headers.get('cache-control')?.includes('immutable')) {
+      await response.body?.cancel();
+      throw new Error('Media cache headers are missing.');
+    }
+    return response;
+  };
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const head = await check('HEAD');
+      await head.body?.cancel();
+      const response = await check('GET');
+      const checksum = createHash('sha256');
+      let size = 0;
+      if (!response.body) throw new Error('The media response was empty.');
+      for await (const chunk of response.body) {
+        size += chunk.length;
+        if (size > asset.bytes) throw new Error('The delivered media size changed.');
+        checksum.update(chunk);
+      }
+      if (size !== asset.bytes || checksum.digest('hex') !== asset.sha256)
+        throw new Error('The CDN media checksum does not match the prepared artifact.');
+      if (asset.bytes) {
+        const warm = await check('GET', true);
+        await warm.body?.cancel();
+      }
+      return;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw new Error(
+    'Media verification failed: ' + (lastError as Error).message + ' Pages was not uploaded.',
+  );
+}
 export function createR2Client(site: SiteConfig, environment: NodeJS.ProcessEnv) {
   return new S3Client({
     region: 'auto',
@@ -66,7 +130,7 @@ export function createR2Transport(
         return (
           value.Metadata?.sha256 === asset.sha256 &&
           value.ContentLength === asset.bytes &&
-          value.ContentType?.split(';')[0] === asset.contentType &&
+          value.ContentType?.split(';')[0] === asset.contentType.split(';')[0] &&
           /max-age=31536000/.test(value.CacheControl || '') &&
           /immutable/.test(value.CacheControl || '')
         );
@@ -99,48 +163,7 @@ export function createR2Transport(
       }
     },
     async verify(asset) {
-      const origin = new URL(site.url).origin;
-      let lastError: unknown;
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          const response = await request(asset.url, {
-            method: 'GET',
-            credentials: 'omit',
-            redirect: 'manual',
-            headers: { Origin: origin },
-            signal: AbortSignal.timeout(15000),
-          });
-          if (
-            !response.ok ||
-            response.headers.get('content-type')?.split(';')[0] !== asset.contentType
-          )
-            throw new Error('Media domain did not return the expected image.');
-          if (!['*', origin].includes(response.headers.get('access-control-allow-origin') || ''))
-            throw new Error(
-              'The media domain needs public GET/HEAD CORS for image downloads. ' +
-                'Open the R2 bucket’s Settings → CORS Policy and allow GET and HEAD from your site origin or *. ' +
-                'If the policy was just changed, purge the media hostname’s cached files in Cloudflare.',
-            );
-          if (!response.headers.get('cache-control')?.includes('immutable'))
-            throw new Error('Media cache headers are missing.');
-          const hash = createHash('sha256');
-          let size = 0;
-          if (!response.body) throw new Error('The image response was empty.');
-          for await (const chunk of response.body) {
-            size += chunk.length;
-            if (size > asset.bytes) throw new Error('The delivered image size changed.');
-            hash.update(chunk);
-          }
-          if (size !== asset.bytes || hash.digest('hex') !== asset.sha256)
-            throw new Error('The CDN image checksum does not match the prepared artifact.');
-          return;
-        } catch (error) {
-          lastError = error;
-        }
-      }
-      throw new Error(
-        'Media verification failed: ' + (lastError as Error).message + ' Pages was not uploaded.',
-      );
+      await verifyPublicMedia(site, asset, request);
     },
     close() {
       client.destroy();
